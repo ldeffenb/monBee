@@ -1,0 +1,24 @@
+{
+  "name": "monbee",
+  "version": "0.0.1",
+  "description": "An Ethersphere Bee node monitor written in JavaScript for node.js",
+  "main": "monBee.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ldeffenb/monBee.git"
+  },
+  "author": "ldeffenb",
+  "license": "BSD-3-Clause",
+  "bugs": {
+    "url": "https://github.com/ldeffenb/monBee/issues"
+  },
+  "homepage": "https://github.com/ldeffenb/monBee#readme",
+  "dependencies": {
+    "@ethersphere/bee-js": "^0.5.0",
+    "axios": "^0.21.1",
+    "blessed": "^0.1.81"
+  }
+}
