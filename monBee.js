@@ -210,11 +210,13 @@ function showCashBox(text)
 	screen.render()
 }
 
+var debugging = false
+
 function showError(text)
 {
 	var today = new Date().toJSON().substring(10,19).replace('T',' ');
 	var line = today+' '+text
-	console.error(line)
+	if (debugging) console.error(line)
 	outputBox.insertLine(0, line);
 	screen.render()
 }
@@ -228,6 +230,12 @@ function showError(text)
 //  screen.render();
 //});
 
+function shortID(id, n)
+{
+	if (id.substring(0,2) == '0x') id = id.substring(2)
+	if (id.length <= n*2) return id
+	return id.substring(0,n)+".."+id.substring(id.length-n)
+}
 
 var peerMAs = new Map()
 
@@ -240,18 +248,19 @@ var casherPending = []
 
 async function actualCasher()
 {
-	showError('actualCasher running!')
+	showError('actualCasher running for '+casherPending.length+' checks!')
 	while (casherPending.length > 0)
 	{
 		var check = casherPending[0]
 		var host = check.URL.substring(check.URL.length-8)
-		showError(casherPending.length+' '+host+' cashing '+check.peer)
+		showError(host+' cash:'+check.peer)
 			
 		//local startTransaction = MOAISim.getDeviceTime()
 		try
 		{	transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer})
 			// ???? beeDebug.getLastCashoutAction(v.peer)
-			showError(host+' '+check.peer+' '+transaction.data.transactionHash)
+			showError(host+' trans:'+shortID(transaction.data.transactionHash,100))
+			//showCashBox(host+' '+shortID(check.peer,4)+' '+shortID(transaction.data.transactionHash,4))
 			//updateScroll(string.format("%s %s %s", host, shortID(check.peer,4), shortID(transaction.transactionHash,4) ))
 			//local timeout = MOAISim.getDeviceTime() + 60	-- 60 seconds max wait
 			//while MOAISim.getDeviceTime() < timeout do
@@ -259,48 +268,36 @@ async function actualCasher()
 			{
 				try
 				{
+					var finished = false
+					var finalStatus = "????"
 					for (var t=0; t<11; t++)	// 10+9+8+7+6+5+4+3+2+1 = 55 seconds total
 					{
-					await new Promise(r => setTimeout(r, t*1000+1))	// An increasing sleep delay for now
-					result = await axios({ method: 'get', url: check.URL+'/chequebook/cashout/'+check.peer})
-					//showError(JSON.stringify(result.data))
-					if (isUndefined(result.data.result) || result.data.result == null)
-					{
-						showError(host+' result='+result.data.result+' '+transaction.data.transactionHash)
-						await new Promise(r => setTimeout(r, 1000))	// Check once/second
-					}
-					else
-					{
-						showError(host+' result='+JSON.stringify(result.data.result))
-						if (result.data.result.bounced)
-							showCashBox(host+' BOUNCED')
+						await new Promise(r => setTimeout(r, t*1000+1))	// An increasing sleep delay for now
+						var result = await axios({ method: 'get', url: check.URL+'/chequebook/cashout/'+check.peer})
+						//showError(JSON.stringify(result.data))
+						if (isUndefined(result.data.result) || result.data.result == null)
+						{
+							showError(host+' wait:'+shortID(transaction.data.transactionHash,100))
+							await new Promise(r => setTimeout(r, 1000))	// Check once/second
+						}
 						else
-							showCashBox(host+' cashed')
-						break;
+						{
+							//showError(host+' result='+JSON.stringify(result.data.result))
+							if (result.data.result.bounced)
+								finalStatus = 'BOUNCED'
+							else
+								finalStatus = 'cashed'
+							finished = true
+							break;
+						}
 					}
-//					if not result.result then
-//						--print(printableTable(URL,result))
-//						--print(string.format("%s gave %s(%s)", URL, type(result.result), tostring(result.result)))
-//						--print(string.format("%s awaiting %s t-%ds", URL, transaction.transactionHash, timeout-MOAISim.getDeviceTime()))
-//						updateScroll(string.format("%s: %s t-%ds", host, shortID(transaction.transactionHash,4), timeout-MOAISim.getDeviceTime()))
-//						sleep(1000)
-//					elseif type(result.result) ~= "table" then
-//						print(string.format("%s gave %s(%s)", URL, type(result.result), tostring(result.result)))
-//						updateScroll(string.format("%s: %s %s t-%ds", host, shortID(transaction.transactionHash,4), tostring(result.result), timeout-MOAISim.getDeviceTime()))
-//						sleep(1000)
-//					else
-//						if result.result.bounced then
-//							updateScroll(string.format("%s: %s BOUNCE", host, shortID(check.peer,4)))
-//						else
-//							updateScroll(string.format("%s: %s G+%ds", host, shortID(check.peer,4), MOAISim.getDeviceTime()-startTransaction))
-//						end
-					}	// Temporary end for t=
-						break
-//					end
+					if (!finished) finalStatus = 'TIMEOUT'
+					showCashBox(host+' '+finalStatus)
+					showError(host+' '+finalStatus+':'+shortID(transaction.data.transactionHash,100))
+					break
 				} catch (error)
 				{
 					showError('waitCashout:'+error)
-					//updateScroll(string.format("%s %s FAILED", host, shortID(check.peer,4)))
 				}
 			}
 		} catch (error) {
@@ -335,11 +332,11 @@ function cashCheck(URL, peer)
 
 	if (!casherRunning)
 	{
-		showError('Starting actualCasher')
+		//showError('Starting actualCasher')
 		casherRunning = true
 		actualCasher()	// Hopefully this returns on the first async call...
 		//setTimeout(actualCasher, 0);	// Maybe 1 or 10 msec
-		showError('Back from actualCasher')
+		//showError('Back from actualCasher')
 	}
 	return true
 }
@@ -647,6 +644,8 @@ for (var i=2; i<process.argv.length; i++)
 {
 	if (process.argv[i] == '--cashout')
 		cashoutChecks = true
+	else if (process.argv[i] == '--debug')
+		debugging = true
 	else
 	{
 		objs[objs.length] = new beeMonitor(process.argv[i])
@@ -706,13 +705,6 @@ async function refreshScreen()
 	today = new Date().toJSON().substring(10,19).replace('T',' ');
 	cashBox.setLine(0, '{center}{bold}'+today+'{/bold} {blue-fg}('+elapsed+'s){/blue-fg}{/center}')
 	
-	if (cashoutChecks)
-	{	if (casherPending.length > 0)
-		{	showCashBox(casherPending.length+' checks!')
-			//casherPending = []
-		} //else showError("No Checks to cash")
-	} //else showError("NOT cashing out")
-
 	screen.render()
 	
     setTimeout(refreshScreen, 60000);
