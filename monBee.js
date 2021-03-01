@@ -388,7 +388,9 @@ class beeMonitor
 			}
 			return '{green-fg}+'+shortNum(value)+'{/green-fg}'
 		}
-		return '{white-fg}'+shortNum(value)+'{/white-fg}'
+		if (isUndefined(forcePlus))
+			return '{white-fg}'+shortNum(value)+'{/white-fg}'
+		else return '{white-fg}+'+shortNum(value)+'{/white-fg}'
 	}
 
 	colorDelta(name, value, forcePlus)
