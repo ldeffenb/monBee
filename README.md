@@ -7,7 +7,11 @@ sudo apt-get install nodejs
 
 sudo apt-get install npm
 
-Then the following command should install the needed dependencies.
+Or for Windows or macOS, https://nodejs.org/en/download/
+
+You'll also need git to clone this repository: https://git-scm.com/download/win
+
+Then the following command should install the needed dependencies when executed in the cloned directory.
 
 npm i
 
