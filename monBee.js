@@ -211,13 +211,22 @@ function showCashBox(text)
 }
 
 var debugging = false
+var lastErrorTag = ""
 
-function showError(text)
+function showError(text, tag)
 {
 	var today = new Date().toJSON().substring(10,19).replace('T',' ');
 	var line = today+' '+text
 	if (debugging) console.error(line)
-	outputBox.insertLine(0, line);
+	if (!isUndefined(tag) && tag == lastErrorTag)
+	{	
+		outputBox.setLine(0, line);
+		lastErrorTag = tag
+	} else
+	{
+		outputBox.insertLine(0, line);
+		lastErrorTag = !isUndefined(tag)?tag:""
+	}
 	screen.render()
 }
 
@@ -277,23 +286,23 @@ async function actualCasher()
 						//showError(JSON.stringify(result.data))
 						if (isUndefined(result.data.result) || result.data.result == null)
 						{
-							showError(host+' wait:'+shortID(transaction.data.transactionHash,100))
+							showError(host+' wait:'+shortID(transaction.data.transactionHash,100), "wait")
 							await new Promise(r => setTimeout(r, 1000))	// Check once/second
 						}
 						else
 						{
 							//showError(host+' result='+JSON.stringify(result.data.result))
 							if (result.data.result.bounced)
-								finalStatus = 'BOUNCED'
+								finalStatus = 'BOUNCE'
 							else
 								finalStatus = 'cashed'
 							finished = true
 							break;
 						}
 					}
-					if (!finished) finalStatus = 'TIMEOUT'
+					if (!finished) finalStatus = 'WAIT'
 					showCashBox(host+' '+finalStatus)
-					showError(host+' '+finalStatus+':'+shortID(transaction.data.transactionHash,100))
+					showError(host+' '+finalStatus+':'+shortID(transaction.data.transactionHash,100), "wait")
 					break
 				} catch (error)
 				{
@@ -711,4 +720,3 @@ async function refreshScreen()
 }
 
 refreshScreen();
-
