@@ -253,7 +253,6 @@ var peerMAs = new Map()
 var cashoutChecks= false
 var casherRunning = false
 var casherPending = []
-//var casherCallbacks
 
 async function actualCasher()
 {
@@ -270,18 +269,15 @@ async function actualCasher()
 			// ???? beeDebug.getLastCashoutAction(v.peer)
 			showError(host+' trans:'+shortID(transaction.data.transactionHash,100))
 			//showCashBox(host+' '+shortID(check.peer,4)+' '+shortID(transaction.data.transactionHash,4))
-			//updateScroll(string.format("%s %s %s", host, shortID(check.peer,4), shortID(transaction.transactionHash,4) ))
-			//local timeout = MOAISim.getDeviceTime() + 60	-- 60 seconds max wait
-			//while MOAISim.getDeviceTime() < timeout do
 			while (true)
 			{
 				try
 				{
 					var finished = false
 					var finalStatus = "????"
-					for (var t=0; t<11; t++)	// 10+9+8+7+6+5+4+3+2+1 = 55 seconds total
+					for (var t=0; t<60; t++)	// Wait up to 60 seconds for result to appear
 					{
-						await new Promise(r => setTimeout(r, t*1000+1))	// An increasing sleep delay for now
+						await new Promise(r => setTimeout(r, 1000))	// An increasing sleep delay for now
 						var result = await axios({ method: 'get', url: check.URL+'/chequebook/cashout/'+check.peer})
 						//showError(JSON.stringify(result.data))
 						if (isUndefined(result.data.result) || result.data.result == null)
@@ -310,10 +306,8 @@ async function actualCasher()
 				}
 			}
 		} catch (error) {
-			//print(string.format("Peer(%s) First Cashout!", tostring(check.peer)))
 			showError('actualCashout:'+error)
 		}
-		//if check.callback then check.callback(check.URL) end
 		if (casherPending.shift() != check)
 			showError("HUH?  casherPending.shift != check?")
 	}
@@ -334,18 +328,10 @@ function cashCheck(URL, peer)
 	}
 	casherPending[casherPending.length] = {URL: URL, peer: peer}
 
-//	if callback then
-//		if not casherCallbacks then casherCallbacks = {} end
-//		casherCallbacks[URL] = callback
-//	end
-
 	if (!casherRunning)
 	{
-		//showError('Starting actualCasher')
 		casherRunning = true
 		actualCasher()	// Hopefully this returns on the first async call...
-		//setTimeout(actualCasher, 0);	// Maybe 1 or 10 msec
-		//showError('Back from actualCasher')
 	}
 	return true
 }
@@ -358,8 +344,6 @@ class beeMonitor
 		this.lastValues = {}
 		this.cashedChecks = 0
 		this.box = createBox(url)
-		//this.maPromise = this.populateMultiAddr()
-		
 		//this.beeDebug = new BeeDebug(url)
 
 		// Work around spelling misteak (sic) on getChequebookBalance pending correction
@@ -473,8 +457,6 @@ class beeMonitor
 						if (v.lastreceived.payout > cashout.data.cumulativePayout)
 						{
 							totalcashable = totalcashable + 1
-							//updateScroll(host.." "..shortID(v.peer,4).." "..shortColor(v.lastreceived.payout-cashout.data.cumulativePayout))
-							//pendingChecks[pendingChecks.length] = { url: URL, peer: v.peer }
 							if (!cashCheck(URL, v.peer))
 								totalpending = totalpending + 1
 							showCashBox(host+' {green-fg}'+this.colorValue(v.lastreceived.payout-cashout.data.cumulativePayout)+'{/green-fg}')
@@ -533,7 +515,8 @@ class beeMonitor
 					//else showError(debugURL+' already connected to '+ma)
 				}
 			}
-		} else showError(debugURL+' ma='+this.multiAddr)
+		}
+		//else showError(debugURL+' ma='+this.multiAddr)
 	
 		const balances = await axios({ method: 'get', url: debugURL+'/balances' })
 		// beeDebug.getAllBalances()
@@ -689,11 +672,6 @@ async function refreshScreen()
 {
 	var start = new Date()
 	var now = new Date()
-	//console.error(typeof(now)+' '+now)
-	//var tzOffset = now.getTimezoneOffset()
-	//console.error(typeof(tzOffset)+' '+tzOffset)
-	//now = now + tzOffset
-	//console.error(typeof(now)+' '+now)
 	var today = now.toJSON().substring(10,19).replace('T',' ');
 	today = now.toLocaleTimeString()
 	cashBox.setLine(0, '{center}{bold}'+today+'{/bold} {red-fg}(refresh){/red-fg}{/center}')
