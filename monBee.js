@@ -277,7 +277,6 @@ async function actualCasher()
 					var finalStatus = "????"
 					for (var t=0; t<60; t++)	// Wait up to 60 seconds for result to appear
 					{
-						await new Promise(r => setTimeout(r, 1000))	// An increasing sleep delay for now
 						var result = await axios({ method: 'get', url: check.URL+'/chequebook/cashout/'+check.peer})
 						//showError(JSON.stringify(result.data))
 						if (isUndefined(result.data.result) || result.data.result == null)
