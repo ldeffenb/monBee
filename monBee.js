@@ -90,8 +90,17 @@ screen.key(['escape', 'q', 'C-c'], function(ch, key) {
 });
 
 var boxCount = 0
-
+var boxes = []	// for focus tabbing
+var boxFocus = 0
+var boxColors = [ 'white', 'blue', 'red', 'green', 'magenta', 'yellow' ]
 var boxWidth = 45
+
+screen.key(['tab'], function (ch, key) {
+	boxes[boxFocus].style.border.fg = 'white'
+	boxFocus = (boxFocus+1)%boxCount
+	boxes[boxFocus].style.border.fg = 'green'
+	screen.render()
+})
 
 function createBox(URL)
 {
@@ -128,6 +137,12 @@ function createBox(URL)
 
 	// Focus our element.
 	box.focus();
+	boxFocus = boxCount	// index of focussed box
+	boxes[boxCount] = box	// For later focus tabbing
+	
+box.key(['c'], function (ch, key) {
+	showError(JSON.stringify(ch)+' Got key '+JSON.stringify(key))
+})
 
 	boxCount = boxCount + 1
 
@@ -187,6 +202,14 @@ function addBoxes()
 	screen.append(outputBox);
 }
 
+function showCashBox(text)
+{
+	var today = new Date().toJSON().substring(10,19).replace('T',' ');
+	var line = today+' '+text
+	cashBox.insertLine(1, line);
+	screen.render()
+}
+
 function showError(text)
 {
 	var today = new Date().toJSON().substring(10,19).replace('T',' ');
@@ -207,6 +230,119 @@ function showError(text)
 
 
 var peerMAs = new Map()
+
+//await new Promise(r => setTimeout(r, 2000));
+
+var cashoutChecks= false
+var casherRunning = false
+var casherPending = []
+//var casherCallbacks
+
+async function actualCasher()
+{
+	showError('actualCasher running!')
+	while (casherPending.length > 0)
+	{
+		var check = casherPending[0]
+		var host = check.URL.substring(check.URL.length-8)
+		showError(casherPending.length+' '+host+' cashing '+check.peer)
+			
+		//local startTransaction = MOAISim.getDeviceTime()
+		try
+		{	transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer})
+			// ???? beeDebug.getLastCashoutAction(v.peer)
+			showError(host+' '+check.peer+' '+transaction.data.transactionHash)
+			//updateScroll(string.format("%s %s %s", host, shortID(check.peer,4), shortID(transaction.transactionHash,4) ))
+			//local timeout = MOAISim.getDeviceTime() + 60	-- 60 seconds max wait
+			//while MOAISim.getDeviceTime() < timeout do
+			while (true)
+			{
+				try
+				{
+					for (var t=0; t<11; t++)	// 10+9+8+7+6+5+4+3+2+1 = 55 seconds total
+					{
+					await new Promise(r => setTimeout(r, t*1000+1))	// An increasing sleep delay for now
+					result = await axios({ method: 'get', url: check.URL+'/chequebook/cashout/'+check.peer})
+					showError(JSON.stringify(result.data))
+					if (isUndefined(result.data.result) || result.data.result == null)
+					{
+						showError(host+' result='+result.data.result+' '+transaction.data.transactionHash)
+						await new Promise(r => setTimeout(r, 1000))	// Check once/second
+					}
+					else
+					{
+						showError(host+' result='+JSON.stringify(result.data.result))
+						if (result.data.result.bounced)
+							showCashBox(host+' BOUNCED')
+						else
+							showCashBox(host+' cashed')
+						break;
+					}
+//					if not result.result then
+//						--print(printableTable(URL,result))
+//						--print(string.format("%s gave %s(%s)", URL, type(result.result), tostring(result.result)))
+//						--print(string.format("%s awaiting %s t-%ds", URL, transaction.transactionHash, timeout-MOAISim.getDeviceTime()))
+//						updateScroll(string.format("%s: %s t-%ds", host, shortID(transaction.transactionHash,4), timeout-MOAISim.getDeviceTime()))
+//						sleep(1000)
+//					elseif type(result.result) ~= "table" then
+//						print(string.format("%s gave %s(%s)", URL, type(result.result), tostring(result.result)))
+//						updateScroll(string.format("%s: %s %s t-%ds", host, shortID(transaction.transactionHash,4), tostring(result.result), timeout-MOAISim.getDeviceTime()))
+//						sleep(1000)
+//					else
+//						if result.result.bounced then
+//							updateScroll(string.format("%s: %s BOUNCE", host, shortID(check.peer,4)))
+//						else
+//							updateScroll(string.format("%s: %s G+%ds", host, shortID(check.peer,4), MOAISim.getDeviceTime()-startTransaction))
+//						end
+					}	// Temporary end for t=
+						break
+//					end
+				} catch (error)
+				{
+					showError('waitCashout:'+error)
+					//updateScroll(string.format("%s %s FAILED", host, shortID(check.peer,4)))
+				}
+			}
+		} catch (error) {
+			//print(string.format("Peer(%s) First Cashout!", tostring(check.peer)))
+			showError('actualCashout:'+error)
+		}
+		//if check.callback then check.callback(check.URL) end
+		if (casherPending.shift() != check)
+			showError("HUH?  casherPending.shift != check?")
+	}
+	casherRunning = false
+	showError('actualCasher exiting...')
+}
+
+function cashCheck(URL, peer)
+{
+	if (!cashoutChecks) return false
+	for (var i=0; i<casherPending.length; i++)
+	{
+		if (casherPending[i].URL == URL && casherPending[i].peer == peer)
+		{
+			showError('Skipping duplicate cash('+peer+')')
+			return false
+		}
+	}
+	casherPending[casherPending.length] = {URL: URL, peer: peer}
+
+//	if callback then
+//		if not casherCallbacks then casherCallbacks = {} end
+//		casherCallbacks[URL] = callback
+//	end
+
+	if (!casherRunning)
+	{
+		showError('Starting actualCasher')
+		casherRunning = true
+		actualCasher()	// Hopefully this returns on the first async call...
+		//setTimeout(actualCasher, 0);	// Maybe 1 or 10 msec
+		showError('Back from actualCasher')
+	}
+	return true
+}
 
 class beeMonitor
 {
@@ -317,9 +453,9 @@ class beeMonitor
 							} catch (error) {
 								if (error.response.status == 404)
 									showError('SECOND 404 from '+URL+'/chequebook/cashout/'+v.peer)
-								else showError("RETRY: "+error)
+								else showError("404 RETRY: "+error)
 							}
-						} else showError(error)
+						} else showError('cashout:'+error)
 						cashout = {"data":{"cumulativePayout": 0}}
 					}
 					checkCount = checkCount + 1
@@ -330,17 +466,15 @@ class beeMonitor
 						{
 							totalcashable = totalcashable + 1
 							//updateScroll(host.." "..shortID(v.peer,4).." "..shortColor(v.lastreceived.payout-cashout.data.cumulativePayout))
-							//if not cashCheck(URL, v.peer, callback) then
+							//pendingChecks[pendingChecks.length] = { url: URL, peer: v.peer }
+							if (!cashCheck(URL, v.peer))
 								totalpending = totalpending + 1
-							//end
-							var today = new Date().toJSON().substring(10,19).replace('T',' ');
-							cashBox.insertLine(1, today+' '+host+' {green-fg}'+this.colorValue(v.lastreceived.payout-cashout.data.cumulativePayout)+'{/green-fg}');
-							screen.render()
+							showCashBox(host+' {green-fg}'+this.colorValue(v.lastreceived.payout-cashout.data.cumulativePayout)+'{/green-fg}')
 							foundOne = true
 						}
 					}
 				} catch (error) {
-					showError(error);
+					showError('lastcheque:'+error);
 				}
 			}
 			}
@@ -385,7 +519,7 @@ class beeMonitor
 							{	showError(debugURL+' connected to '+ma)
 							} else showError(debugURL+' connected to '+JSON.stringify(connection.data.address))
 						} catch (error)
-						{	showError(error)
+						{	showError('connect:'+error)
 						}
 					}
 					//else showError(debugURL+' already connected to '+ma)
@@ -439,11 +573,7 @@ class beeMonitor
 		var cashLine = ""
 		if (isUndefined(this.cashLast) || (new Date()-this.cashLast) > 5*60*1000)	// Time for a full pass, every 5 minutes in msec
 		{
-			if (isUndefined(this.cashLast)) this.cashLast = new Date()	// Temporarily for the elapsed math
-			var elapsed = new Date()-this.cashLast
-			var host = debugURL.substring(debugURL.length-8)
-			var today = new Date().toJSON().substring(10,19).replace('T',' ');
-			cashBox.insertLine(1, today+' '+host+' cashLine '+elapsed+'ms');
+			var startScan = new Date()
 			
 			this.cashLast = new Date()
 			var cashes = await this.captureCashes(debugURL)	// get ALL peers
@@ -457,8 +587,16 @@ class beeMonitor
 			var cashed = ""
 			if (this.cashedChecks > 0) cashed = this.colorValue(this.cashedChecks)+' '
 			cashLine = '{center}'+cashed+'CHECKS: '+this.colorValue(cashes.totalreceived)+this.colorValue(-cashes.totalcashed,true)+'='+this.colorValue(netCashed)+this.colorDelta('CASHED',netCashed)+cashable+'{/center}'
+			
+			if (isUndefined(this.cashShort)) this.cashShort = 0
+			var elapsed = new Date()-startScan
+			var host = debugURL.substring(debugURL.length-8)
+			var today = new Date().toJSON().substring(10,19).replace('T',' ');
+			//showCashBox(host+' full '+elapsed+'ms vs '+this.cashShort+'ms')
 		} else	// Just do a connected peer pass
 		{
+			var startScan = new Date()
+
 			var cashes = await this.captureCashes(debugURL, connected)	// get just connected peers
 			var netCashed = cashes.totalreceived-cashes.totalcashed
 			var cashable = ""
@@ -470,6 +608,8 @@ class beeMonitor
 			var cashed = ""
 			if (this.cashedChecks > 0) cashed = this.colorValue(this.cashedChecks)+' '
 			cashLine = '{center}'+cashed+'Checks: '+this.colorValue(cashes.totalreceived)+this.colorValue(-cashes.totalcashed,true)+'='+this.colorValue(netCashed)+this.colorDelta('cashed',netCashed)+cashable+'{/center}'
+			
+			this.cashShort = new Date() - startScan
 		}
 		
 		var totalNet = balTotal + netSettle
@@ -489,25 +629,33 @@ class beeMonitor
 		this.box.setLine(5, '{center}Settled: '+this.colorValue(settlements.data.totalreceived)+this.colorValue(-settlements.data.totalsent)+'='+this.colorValue(netSettle)+this.colorDelta('netSettle',netSettle)+'{/center}')
 		this.box.setLine(6, '{center}Pending: '+this.colorValue(posTotal)+this.colorValue(negTotal)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
 		} catch (error)
-		{	showError(error)
+		{	showError('refresh:'+error)
 			this.box.setContent("")
 			this.box.setLine(-1, '{center}{bold}'+today+' '+this.URL+'{/bold} {red-fg}FAILED{/red-fg}{/center}')
 		}
+		
+		
 		screen.render()
 	}
 }
 
 const objs = []
 
-if (process.argv.length < 3)
+for (var i=2; i<process.argv.length; i++)
+{
+	if (process.argv[i] == '--cashout')
+		cashoutChecks = true
+	else
+	{
+		objs[objs.length] = new beeMonitor(process.argv[i])
+	}
+}
+if (objs.length < 1)
 {	var defaultURL = 'http://127.0.0.1:1635'
 	objs[0] = new beeMonitor(defaultURL)
 	console.error('Usage: '+process.argv[0]+' '+process.argv[1]+' http://127.0.0.1:1635 <http://127.0.0.1:1638 <...>>')
+	console.error('      put --cashout anywhere to automatically cash checkds')
 	console.error('      Defaulting to '+defaultURL)
-} else
-{
-	for (var i=2; i<process.argv.length; i++)
-		objs[i-2] = new beeMonitor(process.argv[i])
 }
 addBoxes()
 screen.render()
@@ -545,16 +693,24 @@ async function refreshScreen()
 	var broken = []
 	for (var i=0; i<objs.length; i++)
 		try { promises[i] = objs[i].refreshBox() }
-		catch (error) { showError(error); broken[i] = true }
+		catch (error) { showError('refresh2:'+error); broken[i] = true }
 	for (var i=0; i<objs.length; i++)
 		if (!broken[i])
 			try { await promises[i] }
-			catch (error) { showError(error) }
+			catch (error) { showError('broken:'+error) }
 		else showError(objs[i].url+' broken promise!')
 
 	var elapsed = Math.trunc((new Date() - start)/1000+0.5)
 	today = new Date().toJSON().substring(10,19).replace('T',' ');
 	cashBox.setLine(0, '{center}{bold}'+today+'{/bold} {blue-fg}('+elapsed+'s){/blue-fg}{/center}')
+	
+	if (cashoutChecks)
+	{	if (casherPending.length > 0)
+		{	showCashBox(casherPending.length+' checks!')
+			//casherPending = []
+		} //else showError("No Checks to cash")
+	} //else showError("NOT cashing out")
+
 	screen.render()
 	
     setTimeout(refreshScreen, 60000);
