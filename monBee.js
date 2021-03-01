@@ -435,18 +435,18 @@ class beeMonitor
 					{	cashout = await axios({ method: 'get', url: URL+'/chequebook/cashout/'+v.peer})
 						// beeDebug.getLastCashoutAction(v.peer)
 					} catch (error) {
-						//print(string.format("Peer(%s) First Cashout!", tostring(v.peer)))
 						if (error.response.status == 404)
 						{
-							try
-							{
-								showError('404 from '+URL+'/chequebook/cashout/'+v.peer)
-								cashout = await axios({ method: 'get', url: URL+'/chequebook/cashout/'+v.peer})
-							} catch (error) {
-								if (error.response.status == 404)
-									showError('SECOND 404 from '+URL+'/chequebook/cashout/'+v.peer)
-								else showError("404 RETRY: "+error)
-							}
+							//print(string.format("Peer(%s) First Cashout!", tostring(v.peer)))
+							//try
+							//{
+							//	showError('404 from '+URL+'/chequebook/cashout/'+v.peer)
+							//	cashout = await axios({ method: 'get', url: URL+'/chequebook/cashout/'+v.peer})
+							//} catch (error) {
+							//	if (error.response.status == 404)
+							//		showError('SECOND 404 from '+URL+'/chequebook/cashout/'+v.peer)
+							//	else showError("404 RETRY: "+error)
+							//}
 						} else showError('cashout:'+error)
 						cashout = {"data":{"cumulativePayout": 0}}
 					}
