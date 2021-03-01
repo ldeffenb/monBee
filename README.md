@@ -29,10 +29,8 @@ This will default to monitoring the bee node whose Debug API is at http://localh
 
 To monitor other, or even multiple, bee nodes, use:
 
-node monBee.js http://localhost:1635 http://localhost:1638 http://192.168.10.177:1635 2>monBee.err
+node monBee.js http://localhost:1635 http://localhost:1638 http://192.168.10.177:1635
 
 If you want monBee to cashout any discovered cashable checks, add --cashout anywhere on the command line.
-
-(the 2>monBee.err will capture any error messages to monBee.err instead of messing up the TUI presentation)
 
 Note: This is my first-ever github repository and public release of an open-source project.  I am NOT a JavaScript programmer, but ported my lua/moai code to node.js so that it can be more easily used (and hopefully expanded) by others.
