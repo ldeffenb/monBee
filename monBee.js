@@ -24,6 +24,11 @@ function isUndefined(value){
 //const tag = await bee.createTag()
 //box.setContent(tag)
 
+function currentLocalTime()
+{
+	return new Date().toLocaleTimeString('en-GB')	// en-GB gets a 24hour format, but amazingly local time!
+}
+
 function shortNum(n,plus)
 {
 	if (typeof(n) != "number") return n
@@ -204,8 +209,7 @@ function addBoxes()
 
 function showCashBox(text)
 {
-	var today = new Date().toJSON().substring(10,19).replace('T',' ');
-	var line = today+' '+text
+	var line = currentLocalTime()+' '+text
 	cashBox.insertLine(1, line);
 	screen.render()
 }
@@ -215,8 +219,7 @@ var lastErrorTag = ""
 
 function showError(text, tag)
 {
-	var today = new Date().toJSON().substring(10,19).replace('T',' ');
-	var line = today+' '+text
+	var line = currentLocalTime()+' '+text
 	if (debugging) console.error(line)
 	if (!isUndefined(tag) && tag == lastErrorTag)
 	{	
@@ -477,8 +480,7 @@ class beeMonitor
 	async refreshBox () {
 
 		var start = new Date()
-		var today = new Date().toJSON().substring(10,19).replace('T',' ');
-		this.box.setLine(-1, '{center}{bold}'+today+' '+this.URL+'{/bold} {red-fg}refresh{/red-fg}{/center}')
+		this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {red-fg}refresh{/red-fg}{/center}')
 		screen.render()
 
 		var debugURL = this.URL
@@ -581,7 +583,6 @@ class beeMonitor
 			if (isUndefined(this.cashShort)) this.cashShort = 0
 			var elapsed = new Date()-startScan
 			var host = debugURL.substring(debugURL.length-8)
-			var today = new Date().toJSON().substring(10,19).replace('T',' ');
 			//showCashBox(host+' full '+elapsed+'ms vs '+this.cashShort+'ms')
 		} else	// Just do a connected peer pass
 		{
@@ -606,9 +607,8 @@ class beeMonitor
 		if (isUndefined(this.startingNet)) this.startingNet = totalNet
 
 		var elapsed = Math.trunc((new Date() - start)/1000+0.5)
-		today = new Date().toJSON().substring(10,19).replace('T',' ');
 		
-		this.box.setLine(-1, '{center}{bold}'+today+' '+this.URL+'{/bold} {blue-fg}'+elapsed+'s{/blue-fg}{/center}')
+		this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {blue-fg}'+elapsed+'s{/blue-fg}{/center}')
 		this.box.setLine(1, '{center}Connected: '+peers.data.peers.length+this.colorDelta('connected',peers.data.peers.length,true)+'{/center}')
 		this.box.setLine(2, '{center}Peers: '+balances.data.balances.length+''+this.colorDelta('peers',balances.data.balances.length,true)+
 						' Net:'+this.colorValue(totalNet)+this.colorSpecificDelta(this.startingNet,totalNet)+'{/center}')
@@ -617,13 +617,12 @@ class beeMonitor
 		this.box.setLine(3, '{center}CheckBook: '+this.colorValue(checkbook.data.totalBalance)+'('+this.colorValue(checkbook.data.availableBalance)+')'+this.colorDelta('checkbook',checkbook.data.availableBalance,true)+'{/center}')
 		this.box.setLine(4, cashLine)
 		this.box.setLine(5, '{center}Settled: '+this.colorValue(settlements.data.totalreceived)+this.colorValue(-settlements.data.totalsent)+'='+this.colorValue(netSettle)+this.colorDelta('netSettle',netSettle)+'{/center}')
-		this.box.setLine(6, '{center}Pending: '+this.colorValue(posTotal)+this.colorValue(negTotal)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
+		this.box.setLine(6, '{center}Balance: '+this.colorValue(posTotal)+this.colorValue(negTotal)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
 		} catch (error)
 		{	showError('refresh:'+error)
 			this.box.setContent("")
-			this.box.setLine(-1, '{center}{bold}'+today+' '+this.URL+'{/bold} {red-fg}FAILED{/red-fg}{/center}')
+			this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {red-fg}FAILED{/red-fg}{/center}')
 		}
-		
 		
 		screen.render()
 	}
@@ -670,10 +669,7 @@ async function testIt()
 async function refreshScreen()
 {
 	var start = new Date()
-	var now = new Date()
-	var today = now.toJSON().substring(10,19).replace('T',' ');
-	today = now.toLocaleTimeString()
-	cashBox.setLine(0, '{center}{bold}'+today+'{/bold} {red-fg}(refresh){/red-fg}{/center}')
+	cashBox.setLine(0, '{center}{bold}'+currentLocalTime()+'{/bold} {red-fg}(refresh){/red-fg}{/center}')
 	screen.render()
 
 	var promises = []
@@ -688,8 +684,7 @@ async function refreshScreen()
 		else showError(objs[i].url+' broken promise!')
 
 	var elapsed = Math.trunc((new Date() - start)/1000+0.5)
-	today = new Date().toJSON().substring(10,19).replace('T',' ');
-	cashBox.setLine(0, '{center}{bold}'+today+'{/bold} {blue-fg}('+elapsed+'s){/blue-fg}{/center}')
+	cashBox.setLine(0, '{center}{bold}'+currentLocalTime()+'{/bold} {blue-fg}('+elapsed+'s){/blue-fg}{/center}')
 	
 	screen.render()
 	
