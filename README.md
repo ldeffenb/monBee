@@ -64,3 +64,7 @@ npm install @ethersphere/bee-js
 ## Disclaimer
 
 Note: This is my first-ever github repository and public release of an open-source project.  I am NOT a JavaScript programmer, but ported my lua/moai code to node.js so that it can be more easily used (and hopefully expanded) by others.
+
+## Warning
+
+Just don't run monBee for a long time if you use infura.io's free account as your swap-endpoint because monBee refreshes every minute and will eat up your 100,000 API hits in short order.  No gETH, but every query is counted at infura.io.
