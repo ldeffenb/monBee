@@ -338,6 +338,8 @@ function cashCheck(URL, peer)
 	return true
 }
 
+var crossConnect = false
+
 class beeMonitor
 {
 	constructor(url)
@@ -496,28 +498,30 @@ class beeMonitor
 		
 		if (isUndefined(this.multiAddr))
 			await this.populateMultiAddr()
-
-		if (!isUndefined(this.multiAddr))
+		if (crossConnect)
 		{
-			for (let [p, ma] of peerMAs.entries())
+			if (!isUndefined(this.multiAddr))
 			{
-				if (ma != this.multiAddr)
-				{	if (!connected[p])
-					{
-						try
-						{	const connection = await axios({ method: 'post', url: debugURL+'/connect'+ma })
-							if (connection.data.address == p)
-							{	showError(debugURL+' connected to '+ma)
-							} else showError(debugURL+' connected to '+JSON.stringify(connection.data.address))
-						} catch (error)
-						{	showError('connect:'+error)
+				for (let [p, ma] of peerMAs.entries())
+				{
+					if (ma != this.multiAddr)
+					{	if (!connected[p])
+						{
+							try
+							{	const connection = await axios({ method: 'post', url: debugURL+'/connect'+ma })
+								if (connection.data.address == p)
+								{	showError(debugURL+' connected to '+ma)
+								} else showError(debugURL+' connected to '+JSON.stringify(connection.data.address))
+							} catch (error)
+							{	showError('connect:'+error)
+							}
 						}
+						//else showError(debugURL+' already connected to '+ma)
 					}
-					//else showError(debugURL+' already connected to '+ma)
 				}
 			}
+			//else showError(debugURL+' ma='+this.multiAddr)
 		}
-		//else showError(debugURL+' ma='+this.multiAddr)
 	
 		const balances = await axios({ method: 'get', url: debugURL+'/balances' })
 		// beeDebug.getAllBalances()
@@ -636,6 +640,8 @@ for (var i=2; i<process.argv.length; i++)
 		cashoutChecks = true
 	else if (process.argv[i] == '--debug')
 		debugging = true
+	else if (process.argv[i] == '--crossconnect')
+		crossConnect = true
 	else
 	{
 		objs[objs.length] = new beeMonitor(process.argv[i])
