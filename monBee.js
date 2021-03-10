@@ -24,6 +24,10 @@ function isUndefined(value){
 //const tag = await bee.createTag()
 //box.setContent(tag)
 
+var paymentThreshold = 10000000000000
+var paymentEarly = 1000000000000
+var paymentTrigger = paymentThreshold - paymentEarly
+
 function currentLocalTime()
 {
 	return new Date().toLocaleTimeString('en-GB')	// en-GB gets a 24hour format, but amazingly local time!
@@ -164,7 +168,8 @@ function addBoxes()
 	  left: 2*boxWidth,
 	  width: '100%-'+(2*boxWidth),
 	  height: '100%',
-	  content: '{center}\nnew\ncashable\nchecks\nwill\nappear\nhere\n\eventually!{/center}',
+
+	  content: '{center}\nThreshold: '+shortNum(paymentThreshold)+'\nEarly:     '+shortNum(paymentEarly)+'\nTrigger:   '+shortNum(paymentTrigger)+'\nBalance {cyan-fg}99%{/cyan-fg}: ~{cyan-fg}'+shortNum((paymentTrigger) * 0.99)+'{/cyan-fg}\nBalance {yellow-fg}98%{/yellow-fg}: ~{yellow-fg}'+shortNum((paymentTrigger) * 0.98)+'{/yellow-fg}{/center}',
 	  scrollable: true,
 	  tags: true,
 	  border: {
@@ -214,6 +219,20 @@ function showCashBox(text)
 	screen.render()
 }
 
+function setCashBoxLine(index,text)
+{
+	var line = currentLocalTime()+' '+text
+	cashBox.setLine(index, line);
+	screen.render()
+}
+
+function addCashBoxLine(index,text)
+{
+	var line = currentLocalTime()+' '+text
+	cashBox.insertLine(index, line);
+	screen.render()
+}
+
 var debugging = false
 var lastErrorTag = ""
 
@@ -247,6 +266,50 @@ function shortID(id, n)
 	if (id.substring(0,2) == '0x') id = id.substring(2)
 	if (id.length <= n*2) return id
 	return id.substring(0,n)+".."+id.substring(id.length-n)
+}
+
+
+function colorValue(value, forcePlus)
+{
+	if (value < 0)
+	{	return '{red-fg}'+shortNum(value)+'{/red-fg}'
+	} else if (value > 0)
+	{	if (isUndefined(forcePlus))
+		{	return '{green-fg}'+shortNum(value)+'{/green-fg}'
+		}
+		return '{green-fg}+'+shortNum(value)+'{/green-fg}'
+	}
+	if (isUndefined(forcePlus))
+		return '{white-fg}'+shortNum(value)+'{/white-fg}'
+	else return '{white-fg}+'+shortNum(value)+'{/white-fg}'
+}
+
+function colorSpecificDelta(previousValue, value, forcePlus)
+{
+	var delta = value - previousValue
+	if (delta != 0)
+	{
+		return ' ('+colorValue(delta, forcePlus)+')'
+	}
+	return ''
+}
+
+var lastValues = {}
+
+function colorDelta(name, value, forcePlus)
+{
+	if (isUndefined(lastValues[name]))
+	{	lastValues[name] = value
+		return ''
+	}
+	
+	var delta = value - lastValues[name]
+	lastValues[name] = value;
+	if (delta != 0)
+	{
+		return ' ('+colorValue(delta, forcePlus)+')'
+	}
+	return ''
 }
 
 var peerMAs = new Map()
@@ -317,18 +380,32 @@ async function actualCasher()
 	showError('actualCasher exiting...')
 }
 
-function cashCheck(URL, peer)
+function cashCheck(URL, peer, amount)
 {
-	if (!cashoutChecks) return false
+	var host = URL.substring(URL.length-8)
 	for (var i=0; i<casherPending.length; i++)
 	{
 		if (casherPending[i].URL == URL && casherPending[i].peer == peer)
 		{
-			showError('Skipping duplicate cash('+peer+')')
+			if (cashoutChecks)
+			{
+				showError(host+' Skipping duplicate cash('+peer+') '+colorValue(amount)+colorSpecificDelta(casherPending[i].amount, amount, true))
+			} else
+			{
+				if (amount != casherPending[i].uAmount)
+				{
+					setCashBoxLine(i+1, host+' '+colorValue(amount)+colorSpecificDelta(casherPending[i].amount, amount, true))
+					showError(host+' Delta Check '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true)+colorSpecificDelta(casherPending[i].amount, amount, true)+'\n         '+peer)
+					casherPending[i].uAmount = amount
+				}
+			}
 			return false
 		}
 	}
-	casherPending[casherPending.length] = {URL: URL, peer: peer}
+	casherPending[casherPending.length] = {URL: URL, peer: peer, amount: amount, uAmount: amount}
+	addCashBoxLine(casherPending.length, host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true))
+
+	if (!cashoutChecks) return false
 
 	if (!casherRunning)
 	{
@@ -349,6 +426,8 @@ class beeMonitor
 		this.cashedChecks = 0
 		this.box = createBox(url)
 		//this.beeDebug = new BeeDebug(url)
+		this.cashLast = new Date()	// Defining this will defer a full check pass
+
 
 		// Work around spelling misteak (sic) on getChequebookBalance pending correction
 		//if (isUndefined(this.beeDebug.getChequebookBalance))
@@ -374,43 +453,17 @@ class beeMonitor
 
 	colorValue(value, forcePlus)
 	{
-		if (value < 0)
-		{	return '{red-fg}'+shortNum(value)+'{/red-fg}'
-		} else if (value > 0)
-		{	if (isUndefined(forcePlus))
-			{	return '{green-fg}'+shortNum(value)+'{/green-fg}'
-			}
-			return '{green-fg}+'+shortNum(value)+'{/green-fg}'
-		}
-		if (isUndefined(forcePlus))
-			return '{white-fg}'+shortNum(value)+'{/white-fg}'
-		else return '{white-fg}+'+shortNum(value)+'{/white-fg}'
+		return colorValue(value, forcePlus)
 	}
 
 	colorDelta(name, value, forcePlus)
 	{
-		if (isUndefined(this.lastValues[name]))
-		{	this.lastValues[name] = value
-			return ''
-		}
-		
-		var delta = value - this.lastValues[name]
-		this.lastValues[name] = value;
-		if (delta != 0)
-		{
-			return ' ('+this.colorValue(delta, forcePlus)+')'
-		}
-		return ''
+		return colorDelta(this.URL+':'+name, value, forcePlus)
 	}
 
 	colorSpecificDelta(previousValue, value, forcePlus)
 	{
-		var delta = value - previousValue
-		if (delta != 0)
-		{
-			return ' ('+this.colorValue(delta, forcePlus)+')'
-		}
-		return ''
+		return colorSpecificDelta(previousValue, value, forcePlus)
 	}
 
 	async captureCashes(URL, connected)
@@ -461,9 +514,8 @@ class beeMonitor
 						if (v.lastreceived.payout > cashout.data.cumulativePayout)
 						{
 							totalcashable = totalcashable + 1
-							if (!cashCheck(URL, v.peer))
+							if (!cashCheck(URL, v.peer, v.lastreceived.payout-cashout.data.cumulativePayout))
 								totalpending = totalpending + 1
-							showCashBox(host+' {green-fg}'+this.colorValue(v.lastreceived.payout-cashout.data.cumulativePayout)+'{/green-fg}')
 							foundOne = true
 						}
 					}
@@ -530,9 +582,6 @@ class beeMonitor
 		var posTotal = 0
 		var closeCount = 0
 		var reallyCloseCount = 0
-		var paymentThreshold = 10000000000000
-		var paymentEarly = 1000000000000
-		var paymentTrigger = paymentThreshold - paymentEarly
 		
 		for (var i=0; i<balances.data.balances.length; i++)
 		{
@@ -555,9 +604,9 @@ class beeMonitor
 		var balTotal = negTotal + posTotal
 		var closeString = ""
 		if (reallyCloseCount > 0)
-			closeString = ' ~{yellow-fg}'+reallyCloseCount+'{/yellow-fg}'
+			closeString = ' ~{cyan-fg}'+reallyCloseCount+'{/cyan-fg}'
 		else if (closeCount > 0)
-			closeString = ' ~'+closeCount
+			closeString = ' ~{yellow-fg}'+closeCount+'{/yellow-fg}'
 		
 		const settlements = await axios({ method: 'get', url: debugURL+'/settlements' })
 		// beeDebug.getAllSettlements()
