@@ -268,6 +268,12 @@ function shortID(id, n)
 	return id.substring(0,n)+".."+id.substring(id.length-n)
 }
 
+function leftID(id, n)
+{
+	if (id.substring(0,2) == '0x') id = id.substring(2)
+	if (id.length <= n) return id
+	return id.substring(0,n-3)+"..."
+}
 
 function colorValue(value, forcePlus)
 {
@@ -465,6 +471,7 @@ class beeMonitor
 			if (a.substring(0,16) == '/ip4/192.168.10.')
 			{
 				this.multiAddr = a
+				this.address = addresses.data.overlay
 				peerMAs.set(addresses.data.overlay,a)
 				//showError(this.URL+' peer '+p+' multiAddr '+a)
 				break
@@ -569,7 +576,7 @@ class beeMonitor
 		{	connected[peers.data.peers[i].address] = true
 		}
 		
-		if (isUndefined(this.multiAddr))
+		if (isUndefined(this.multiAddr) || isUndefined(this.address))
 			await this.populateMultiAddr()
 		if (crossConnect)
 		{
@@ -683,7 +690,7 @@ class beeMonitor
 		var elapsed = Math.trunc((new Date() - start)/1000+0.5)
 		
 		this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {blue-fg}'+elapsed+'s{/blue-fg}{/center}')
-		this.box.setLine(1, '{center}Connected: '+peers.data.peers.length+this.colorDelta('connected',peers.data.peers.length,true)+'{/center}')
+		this.box.setLine(1, '{center}Connected: '+peers.data.peers.length+this.colorDelta('connected',peers.data.peers.length,true)+' Addr: '+leftID(this.address,10)+'{/center}')
 		this.box.setLine(2, '{center}Peers: '+balances.data.balances.length+''+this.colorDelta('peers',balances.data.balances.length,true)+
 						' Net:'+this.colorValue(totalNet)+this.colorSpecificDelta(this.startingNet,totalNet)+'{/center}')
 		this.box.setLine(3, '{center}CheckBook: '+this.colorValue(checkbook.data.totalBalance)+'('+this.colorValue(checkbook.data.availableBalance)+')'+this.colorDelta('checkbook',checkbook.data.availableBalance,true)+'{/center}')
