@@ -320,6 +320,12 @@ var cashoutChecks= false
 var casherRunning = false
 var casherPending = []
 
+function logResponse(method, req, rspData)
+{
+	console.error(method+" "+req+"\n"+JSON.stringify(rspData,null,2)+"\n**************************************************************************************")
+}
+
+
 async function actualCasher()
 {
 	showError('actualCasher running for '+casherPending.length+' checks!')
@@ -331,8 +337,14 @@ async function actualCasher()
 			
 		//local startTransaction = MOAISim.getDeviceTime()
 		try
-		{	transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer})
+		{
+
+			logResponse("GET", check.URL+'/chequebook/cheque/'+check.peer, check.lastCheck)
+			logResponse("GET", check.URL+'/chequebook/cashout/'+check.peer, check.lastCashout)
+		
+			var transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer})
 			// ???? beeDebug.getLastCashoutAction(v.peer)
+			logResponse("POST", check.URL+'/chequebook/cashout/'+check.peer, transaction.data)
 			showError(host+' trans:'+shortID(transaction.data.transactionHash,100))
 			//showCashBox(host+' '+shortID(check.peer,4)+' '+shortID(transaction.data.transactionHash,4))
 			while (true)
@@ -352,18 +364,27 @@ async function actualCasher()
 						}
 						else
 						{
+							logResponse("GET", check.URL+'/chequebook/cashout/'+check.peer, result.data)
 							//showError(host+' result='+JSON.stringify(result.data.result))
 							if (result.data.result.bounced)
 								finalStatus = 'BOUNCE'
 							else
+							{
 								finalStatus = 'cashed'
+								if (result.data.result.lastPayout != check.uAmount)
+									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+colorValue(check.uAmount-check.amount, true)+'=expected:'+shortNum(check.amount), "wait")
+								else if (check.amount == check.uAmount)
+									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount), "wait")
+								else showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+colorValue(check.uAmount-check.amount, true)+'='+shortNum(check.uAmount), "wait")
+							}
 							finished = true
 							break;
 						}
 					}
 					if (!finished) finalStatus = 'WAIT'
 					showCashBox(host+' '+finalStatus)
-					showError(host+' '+finalStatus+':'+shortID(transaction.data.transactionHash,100), "wait")
+					if (finalStatus != 'cashed')
+						showError(host+' '+finalStatus+':'+shortID(transaction.data.transactionHash,100), "wait")
 					break
 				} catch (error)
 				{
@@ -380,7 +401,7 @@ async function actualCasher()
 	showError('actualCasher exiting...')
 }
 
-function cashCheck(URL, peer, amount)
+function cashCheck(URL, peer, amount, lastCheck, lastCashout)
 {
 	var host = URL.substring(URL.length-8)
 	for (var i=0; i<casherPending.length; i++)
@@ -389,7 +410,7 @@ function cashCheck(URL, peer, amount)
 		{
 			if (cashoutChecks)
 			{
-				showError(host+' Skipping duplicate cash('+peer+') '+colorValue(amount)+colorSpecificDelta(casherPending[i].amount, amount, true))
+				//showError(host+' Skipping duplicate cash('+peer+') '+colorValue(amount)+colorSpecificDelta(casherPending[i].amount, amount, true))
 			} else
 			{
 				if (amount != casherPending[i].uAmount)
@@ -402,7 +423,7 @@ function cashCheck(URL, peer, amount)
 			return false
 		}
 	}
-	casherPending[casherPending.length] = {URL: URL, peer: peer, amount: amount, uAmount: amount}
+	casherPending[casherPending.length] = {URL: URL, peer: peer, amount: amount, uAmount: amount, lastCheck: lastCheck, lastCashout: lastCashout}
 	addCashBoxLine(casherPending.length, host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true))
 
 	if (!cashoutChecks) return false
@@ -514,7 +535,7 @@ class beeMonitor
 						if (v.lastreceived.payout > cashout.data.cumulativePayout)
 						{
 							totalcashable = totalcashable + 1
-							if (!cashCheck(URL, v.peer, v.lastreceived.payout-cashout.data.cumulativePayout))
+							if (!cashCheck(URL, v.peer, v.lastreceived.payout-cashout.data.cumulativePayout, v, cashout.data))
 								totalpending = totalpending + 1
 							foundOne = true
 						}
