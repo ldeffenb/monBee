@@ -328,7 +328,7 @@ var casherPending = []
 
 function logResponse(method, req, rspData)
 {
-	console.error(method+" "+req+"\n"+JSON.stringify(rspData,null,2)+"\n**************************************************************************************")
+	console.error(currentLocalTime()+' '+method+" "+req+"\n"+JSON.stringify(rspData,null,2)+"\n**************************************************************************************")
 }
 
 
@@ -464,6 +464,7 @@ class beeMonitor
 	async populateMultiAddr()
 	{
 		var addresses = await axios({ method: 'get', url: this.URL+'/addresses' })
+		this.address = addresses.data.overlay
 		for (var i=0; i<addresses.data.underlay.length; i++)
 		{
 			var p = addresses.data.overlay
@@ -471,7 +472,6 @@ class beeMonitor
 			if (a.substring(0,16) == '/ip4/192.168.10.')
 			{
 				this.multiAddr = a
-				this.address = addresses.data.overlay
 				peerMAs.set(addresses.data.overlay,a)
 				//showError(this.URL+' peer '+p+' multiAddr '+a)
 				break
@@ -519,8 +519,9 @@ class beeMonitor
 					try
 					{	cashout = await axios({ method: 'get', url: URL+'/chequebook/cashout/'+v.peer})
 						// beeDebug.getLastCashoutAction(v.peer)
+
 					} catch (error) {
-						if (error.response.status == 404)
+						if (!isUndefined(error) && !isUndefined(error.response) && !isUndefined(error.response.status) && error.response.status == 404)
 						{
 							//print(string.format("Peer(%s) First Cashout!", tostring(v.peer)))
 							//try
@@ -555,7 +556,7 @@ class beeMonitor
 			//else showError(v.peer+' not connected')
 		}
 		//if not foundOne then updateScroll(string.format("noCash:%s %d in %ds", host, checkCount, MOAISim.getDeviceTime()-start)) end
-		
+
 		return {totalreceived, totalcashed, totalcashable, totalpending}
 	}
 
@@ -680,7 +681,6 @@ class beeMonitor
 			var cashed = ""
 			if (this.cashedChecks > 0) cashed = this.colorValue(this.cashedChecks)+' '
 			cashLine = '{center}'+cashed+'Checks: '+this.colorValue(cashes.totalreceived)+this.colorValue(-cashes.totalcashed,true)+'='+this.colorValue(netCashed)+this.colorDelta('cashed',netCashed)+cashable+'{/center}'
-			
 			this.cashShort = new Date() - startScan
 		}
 		
@@ -695,7 +695,6 @@ class beeMonitor
 						' Net:'+this.colorValue(totalNet)+this.colorSpecificDelta(this.startingNet,totalNet)+'{/center}')
 		this.box.setLine(3, '{center}CheckBook: '+this.colorValue(checkbook.data.totalBalance)+'('+this.colorValue(checkbook.data.availableBalance)+')'+this.colorDelta('checkbook',checkbook.data.availableBalance,true)+'{/center}')
 		//this.box.setLine(3, '{center}CheckBook: '+this.colorValue(balance.totalBalance)+'('+this.colorValue(balance.availableBalance)+')'+this.colorDelta('checkbook',balance.availableBalance,true)+'{/center}')
-		this.box.setLine(3, '{center}CheckBook: '+this.colorValue(checkbook.data.totalBalance)+'('+this.colorValue(checkbook.data.availableBalance)+')'+this.colorDelta('checkbook',checkbook.data.availableBalance,true)+'{/center}')
 		this.box.setLine(4, cashLine)
 		this.box.setLine(5, '{center}Settled: '+this.colorValue(settlements.data.totalreceived)+this.colorValue(-settlements.data.totalsent)+'='+this.colorValue(netSettle)+this.colorDelta('netSettle',netSettle)+'{/center}')
 		this.box.setLine(6, '{center}Balance: '+this.colorValue(posTotal)+this.colorValue(negTotal)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
@@ -714,8 +713,10 @@ const objs = []
 for (var i=2; i<process.argv.length; i++)
 {
 	if (process.argv[i] == '--cashout')
+	{
 		cashoutChecks = true
-	else if (process.argv[i] == '--debug')
+		debugging = true
+	} else if (process.argv[i] == '--debug')
 		debugging = true
 	else if (process.argv[i] == '--crossconnect')
 		crossConnect = true
