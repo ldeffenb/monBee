@@ -212,6 +212,29 @@ function addBoxes()
 	screen.append(outputBox);
 }
 
+var cashBoxStatus = "{yellow-fg}starting{/yellow-fg}"
+var cashBoxChecks = 0
+
+function refreshCashBoxTitle()
+{
+	var checks = ""
+	if (cashBoxChecks > 0) checks = " c:"+cashBoxChecks
+	cashBox.setLine(0, '{center}{bold}'+currentLocalTime()+'{/bold} '+cashBoxStatus+checks+'{/center}')
+	screen.render()
+}
+
+function setCashBoxStatus(status)
+{
+		cashBoxStatus = status
+		refreshCashBoxTitle()
+}
+
+function setCashBoxChecks(checks)
+{
+		cashBoxChecks = checks
+		refreshCashBoxTitle()
+}
+
 function showCashBox(text)
 {
 	var line = currentLocalTime()+' '+text
@@ -347,7 +370,8 @@ async function actualCasher()
 
 			logResponse("GET", check.URL+'/chequebook/cheque/'+check.peer, check.lastCheck)
 			logResponse("GET", check.URL+'/chequebook/cashout/'+check.peer, check.lastCashout)
-		
+			// 1 gwei = 10^9 wei = 1000000000
+			//var transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer}, headers: { 'Gas-Price': '1000000000' }})
 			var transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer})
 			// ???? beeDebug.getLastCashoutAction(v.peer)
 			logResponse("POST", check.URL+'/chequebook/cashout/'+check.peer, transaction.data)
@@ -378,10 +402,10 @@ async function actualCasher()
 							{
 								finalStatus = 'cashed'
 								if (result.data.result.lastPayout != check.uAmount)
-									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+colorValue(check.uAmount-check.amount, true)+'=expected:'+shortNum(check.amount), "wait")
+									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+colorValue(check.uAmount-check.amount, true)+'=expected:'+shortNum(check.amount)+" ("+(casherPending.length-1)+" queued)", "wait")
 								else if (check.amount == check.uAmount)
-									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount), "wait")
-								else showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+colorValue(check.uAmount-check.amount, true)+'='+shortNum(check.uAmount), "wait")
+									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+" ("+(casherPending.length-1)+" queued)", "wait")
+								else showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+colorValue(check.uAmount-check.amount, true)+'='+shortNum(check.uAmount)+" ("+(casherPending.length-1)+" queued)", "wait")
 							}
 							finished = true
 							break;
@@ -402,6 +426,7 @@ async function actualCasher()
 		}
 		if (casherPending.shift() != check)
 			showError("HUH?  casherPending.shift != check?")
+		setCashBoxChecks(casherPending.length)
 	}
 	casherRunning = false
 	showError('actualCasher exiting...')
@@ -430,8 +455,15 @@ function cashCheck(URL, peer, amount, lastCheck, lastCashout)
 		}
 	}
 	casherPending[casherPending.length] = {URL: URL, peer: peer, amount: amount, uAmount: amount, lastCheck: lastCheck, lastCashout: lastCashout}
-	addCashBoxLine(casherPending.length, host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true))
-
+	setCashBoxChecks(casherPending.length)
+	if (cashoutChecks)
+	{
+		showCashBox(host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true))
+	} else
+	{
+		addCashBoxLine(casherPending.length, host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true))
+	}
+	
 	if (!cashoutChecks) return false
 
 	if (!casherRunning)
@@ -753,8 +785,7 @@ async function testIt()
 async function refreshScreen()
 {
 	var start = new Date()
-	cashBox.setLine(0, '{center}{bold}'+currentLocalTime()+'{/bold} {red-fg}(refresh){/red-fg}{/center}')
-	screen.render()
+	setCashBoxStatus('{red-fg}(refresh){/red-fg}')
 
 	var promises = []
 	var broken = []
@@ -768,7 +799,7 @@ async function refreshScreen()
 		else showError(objs[i].url+' broken promise!')
 
 	var elapsed = Math.trunc((new Date() - start)/1000+0.5)
-	cashBox.setLine(0, '{center}{bold}'+currentLocalTime()+'{/bold} {blue-fg}('+elapsed+'s){/blue-fg}{/center}')
+	setCashBoxStatus('{blue-fg}('+elapsed+'s){/blue-fg}')
 	
 	screen.render()
 	
