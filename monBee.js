@@ -212,7 +212,7 @@ function addBoxes()
 	screen.append(outputBox);
 }
 
-var cashBoxStatus = "{yellow-fg}starting{/yellow-fg}"
+var cashBoxStatus = "" //"{yellow-fg}starting{/yellow-fg}"
 var cashBoxChecks = 0
 
 function refreshCashBoxTitle()
@@ -782,28 +782,33 @@ async function testIt()
 }
 //testIt()
 
-async function refreshScreen()
+async function refreshScreen(i)
 {
-	var start = new Date()
-	setCashBoxStatus('{red-fg}(refresh){/red-fg}')
-
 	var promises = []
 	var broken = []
-	for (var i=0; i<objs.length; i++)
-		try { promises[i] = objs[i].refreshBox() }
-		catch (error) { showError('refresh2:'+error); broken[i] = true }
-	for (var i=0; i<objs.length; i++)
-		if (!broken[i])
-			try { await promises[i] }
-			catch (error) { showError('broken:'+error) }
-		else showError(objs[i].url+' broken promise!')
+	try { promises[i] = objs[i].refreshBox() }
+	catch (error) { showError('refresh2:'+error); broken[i] = true }
+	if (!broken[i])
+		try { await promises[i] }
+		catch (error) { showError('broken:'+error) }
+	else showError(objs[i].url+' broken promise!')
 
-	var elapsed = Math.trunc((new Date() - start)/1000+0.5)
-	setCashBoxStatus('{blue-fg}('+elapsed+'s){/blue-fg}')
-	
 	screen.render()
 	
-    setTimeout(refreshScreen, 60000);
+    setTimeout(refreshScreen, 60000, i);
 }
 
-refreshScreen();
+async function refreshScreens()
+{
+	for (var i=0; i<objs.length; i++)
+		refreshScreen(i)
+}
+
+async function refreshCashBox()
+{
+	refreshCashBoxTitle()
+	setTimeout(refreshCashBox, 1000);	// Keep a timestamp running
+}
+
+refreshScreens()
+refreshCashBox()
