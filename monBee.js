@@ -192,7 +192,7 @@ function addBoxes()
 	screen.append(cashBox);
 
 	outputBox = blessed.box({
-	  top: Math.trunc((boxCount+1)/2)*8+1,
+	  top: Math.trunc((boxCount+numWidth-1)/numWidth)*8+1,
 	  left: 0,
 	  width: numWidth*boxWidth,
 	  height: '100%',
