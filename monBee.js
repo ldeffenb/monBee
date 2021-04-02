@@ -111,6 +111,8 @@ screen.key(['tab'], function (ch, key) {
 	screen.render()
 })
 
+var numWidth = 2
+
 function createBox(URL)
 {
 
@@ -120,8 +122,8 @@ function createBox(URL)
 	  mouse: true,
 	  keys: true,
 	  vi: true,
-	  left: (boxCount%2)*boxWidth,
-	  top: Math.trunc(boxCount/2)*8,
+	  left: (boxCount%numWidth)*boxWidth,
+	  top: Math.trunc(boxCount/numWidth)*8,
 	  width: boxWidth+1,
 	  height: 9,
 	  content: '{center}'+URL+'{/center}',
@@ -165,8 +167,8 @@ function addBoxes()
 
 	cashBox = blessed.box({
 	  top: 0,
-	  left: 2*boxWidth,
-	  width: '100%-'+(2*boxWidth),
+	  left: numWidth*boxWidth,
+	  width: '100%-'+(numWidth*boxWidth),
 	  height: '100%',
 
 	  content: '{center}\nThreshold: '+shortNum(paymentThreshold)+'\nEarly:     '+shortNum(paymentEarly)+'\nTrigger:   '+shortNum(paymentTrigger)+'\nBalance {cyan-fg}99%{/cyan-fg}: ~{cyan-fg}'+shortNum((paymentTrigger) * 0.99)+'{/cyan-fg}\nBalance {yellow-fg}98%{/yellow-fg}: ~{yellow-fg}'+shortNum((paymentTrigger) * 0.98)+'{/yellow-fg}{/center}',
@@ -192,7 +194,7 @@ function addBoxes()
 	outputBox = blessed.box({
 	  top: Math.trunc((boxCount+1)/2)*8+1,
 	  left: 0,
-	  width: 2*boxWidth,
+	  width: numWidth*boxWidth,
 	  height: '100%',
 	  content: '{left}error and trace\noutput will appear here\nand scroll down{/left}',
 	  scrollable: true,
@@ -357,7 +359,7 @@ function logResponse(method, req, rspData)
 
 async function actualCasher()
 {
-	showError('actualCasher running for '+casherPending.length+' checks!')
+	//showError('actualCasher running for '+casherPending.length+' checks!')
 	while (casherPending.length > 0)
 	{
 		var check = casherPending[0]
@@ -429,7 +431,7 @@ async function actualCasher()
 		setCashBoxChecks(casherPending.length)
 	}
 	casherRunning = false
-	showError('actualCasher exiting...')
+	//showError('actualCasher exiting...')
 }
 
 function cashCheck(URL, peer, amount, lastCheck, lastCashout)
@@ -765,6 +767,8 @@ if (objs.length < 1)
 	console.error('      Defaulting to '+defaultURL)
 }
 addBoxes()
+if (cashoutChecks) showError("Cashing checks!")
+else showError("Monitoring checks")
 screen.render()
 
 async function testIt()
