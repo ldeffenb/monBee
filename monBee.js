@@ -176,7 +176,7 @@ function addBoxes()
 	  width: '100%-'+(numWidth*boxWidth),
 	  height: '100%',
 
-	  content: '{center}\nThreshold: '+shortNum(paymentThreshold)+'\nEarly:     '+shortNum(paymentEarly)+'\nTrigger:   '+shortNum(paymentTrigger)+'\nBalance {cyan-fg}99%{/cyan-fg}: ~{cyan-fg}'+shortNum((paymentTrigger) * 0.99)+'{/cyan-fg}\nBalance {yellow-fg}98%{/yellow-fg}: ~{yellow-fg}'+shortNum((paymentTrigger) * 0.98)+'{/yellow-fg}{/center}',
+	  content: '{center}\n\nThreshold: '+shortNum(paymentThreshold)+'\nEarly:     '+shortNum(paymentEarly)+'\nTrigger:   '+shortNum(paymentTrigger)+'\nBalance {cyan-fg}99%{/cyan-fg}: ~{cyan-fg}'+shortNum((paymentTrigger) * 0.99)+'{/cyan-fg}\nBalance {yellow-fg}98%{/yellow-fg}: ~{yellow-fg}'+shortNum((paymentTrigger) * 0.98)+'{/yellow-fg}{/center}',
 	  scrollable: true,
 	  tags: true,
 	  border: {
@@ -360,27 +360,172 @@ var peerMAs = new Map()
 
 var cashoutChecks= false
 var casherRunning = false
+var waiterRunning = false
 var casherPending = []
+
+var cashedChecks = 0
+var cashedAmount = 0
+
+function addCashedCheck(amount)
+{
+	cashedChecks++
+	cashedAmount += amount
+	text = "Cashed: "+cashedChecks+" @ "+shortNum(cashedAmount)
+	setCashBoxLine(casherPending.length+1,text)
+	screen.render()
+}
 
 function logResponse(method, req, rspData)
 {
 	console.error(currentLocalTime()+' '+method+" "+req+"\n"+JSON.stringify(rspData,null,2)+"\n**************************************************************************************")
 }
 
+function refreshCasherPending()
+{
+	while (casherPending.length > 0 && casherPending[0].cashed)
+	{
+		cashBox.deleteLine(1)	// Scroll the box up by one
+		casherPending.shift()	// Remove the cashed check
+	}
+
+	casherPending.sort(function(l,r){
+		if (l.uAmount == r.uAmount)	// uAmount is the total amount, amount is only the original amount
+		{
+			if (l.when == r.when)
+			{
+				if (l.URL < r.URL) return -1
+				else if (l.URL > r.URL) return 1
+				else if (l.peer < r.peer) return -1
+				else if (l.peer > r.peer) return 1
+				else return 0	// Peers should never be equal!
+			} else return -(l.when - r.when)
+		} else return -(l.uAmount - r.uAmount)
+	})
+	for (var i=0; i<casherPending.length; i++)
+	{
+		casherPending[i].line = i+1
+		setCashBoxLineTime(casherPending[i].line, casherPending[i].when, casherPending[i].text)
+	}
+	screen.render()
+}
+
+async function actualWaiter()
+{
+	//showError('actualCasher running for '+casherPending.length+' checks!')
+	while (casherPending.length > 0)
+	{
+		var check
+		var found = false
+		for (var i=0; i<casherPending.length; i++)
+		{
+			if (casherPending[i].waiting && !casherPending[i].cashed)
+			{
+				found = true
+				check = casherPending[i]
+				break
+			}
+		}
+		if (!found) break	// Nothing to wait on!
+
+		check.text = check.text + '*W'
+		setCashBoxLineTime(check.line, check.when, check.text)
+		screen.render()
+		
+		var host = check.URL.substring(check.URL.length-8)
+		//showError(host+' cash:'+check.peer)
+			
+		try
+		{
+			try
+			{
+				var finished = false
+				var finalStatus = "????"
+				var result = await axios({ method: 'get', url: check.URL+'/chequebook/cashout/'+check.peer})
+				//showError(JSON.stringify(result.data))
+				if (isUndefined(result.data.result) || result.data.result == null)
+				{
+					//showError(host+' wait:'+shortID(transaction.data.transactionHash,100), "wait")
+				}
+				else
+				{
+					logResponse("GET", check.URL+'/chequebook/cashout/'+check.peer, result.data)
+					//showError(host+' result='+JSON.stringify(result.data.result))
+					if (result.data.result.bounced)
+						finalStatus = 'BOUNCE'
+					else
+					{
+						var pending=0
+						for (var i=0; i<casherPending.length; i++)
+							if (!casherPending[i].cashing)
+								pending++
+						finalStatus = 'cashed'
+						addCashedCheck(check.uAmount)
+						if (result.data.result.lastPayout != check.uAmount)
+							showError(host+' WAIT cashed lastPayout:'+shortNum(result.data.result.lastPayout)+colorValue(check.uAmount-check.amount, true)+'=expected:'+shortNum(check.amount)+" ("+(pending)+" queued)")
+						else if (check.amount == check.uAmount)
+							showError(host+' WAIT cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+" ("+(pending)+" queued)")
+						else showError(host+' WAIT cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+colorValue(check.uAmount-check.amount, true)+'='+shortNum(check.uAmount)+" ("+(pending)+" queued)")
+					}
+					finished = true
+				}
+				if (!finished) finalStatus = 'WAIT'
+				check.text = host+' '+finalStatus
+				setCashBoxLineTime(check.line, check.when, check.text)
+				screen.render()
+				//showCashBox(host+' '+finalStatus)
+				if (finalStatus != 'cashed')
+				{
+					//showError(host+' '+finalStatus+':'+shortID(transaction.data.transactionHash,100))
+				} else check.cashed = true
+			} catch (error)
+			{
+				showError('waitWaiter:'+error)
+			}
+		} catch (error) {
+			showError('actualWaiter:'+error)
+		}
+		//if (casherPending.shift() != check)
+		//	showError("HUH?  casherPending.shift != check?")
+		var pending=0
+		for (var i=0; i<casherPending.length; i++)
+			if (!casherPending[i].cashing)
+				pending++
+		setCashBoxChecks(pending)
+		await new Promise(r => setTimeout(r, 10000))	// Check once every 10 seconds
+	}
+	waiterRunning = false
+	//showError('actualCasher exiting...')
+}
 
 async function actualCasher()
 {
 	//showError('actualCasher running for '+casherPending.length+' checks!')
 	while (casherPending.length > 0)
 	{
-		var check = casherPending[0]
+		var check
+		var found = false
+		for (var i=0; i<casherPending.length; i++)
+		{
+			if (!casherPending[i].cashing)
+			{
+				found = true
+				check = casherPending[i]
+				break
+			}
+		}
+		if (!found) break	// Nothing to cash!
+
+		check.cashing = true
+		check.text = check.text + '*'
+		setCashBoxLineTime(check.line, check.when, check.text)
+		screen.render()
+		
 		var host = check.URL.substring(check.URL.length-8)
 		showError(host+' cash:'+check.peer)
 			
 		//local startTransaction = MOAISim.getDeviceTime()
 		try
 		{
-
 			logResponse("GET", check.URL+'/chequebook/cheque/'+check.peer, check.lastCheck)
 			logResponse("GET", check.URL+'/chequebook/cashout/'+check.peer, check.lastCashout)
 			// 1 gwei = 10^9 wei = 1000000000
@@ -413,21 +558,40 @@ async function actualCasher()
 								finalStatus = 'BOUNCE'
 							else
 							{
+								var pending=0
+								for (var i=0; i<casherPending.length; i++)
+									if (!casherPending[i].cashing)
+										pending++
 								finalStatus = 'cashed'
+								finalStatus = 'cashed'
+								addCashedCheck(check.uAmount)
 								if (result.data.result.lastPayout != check.uAmount)
-									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+colorValue(check.uAmount-check.amount, true)+'=expected:'+shortNum(check.amount)+" ("+(casherPending.length-1)+" queued)", "wait")
+									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+colorValue(check.uAmount-check.amount, true)+'=expected:'+shortNum(check.amount)+" ("+(pending)+" queued)", "wait")
 								else if (check.amount == check.uAmount)
-									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+" ("+(casherPending.length-1)+" queued)", "wait")
-								else showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+colorValue(check.uAmount-check.amount, true)+'='+shortNum(check.uAmount)+" ("+(casherPending.length-1)+" queued)", "wait")
+									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+" ("+(pending)+" queued)", "wait")
+								else showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+colorValue(check.uAmount-check.amount, true)+'='+shortNum(check.uAmount)+" ("+(pending)+" queued)", "wait")
 							}
 							finished = true
 							break;
 						}
 					}
-					if (!finished) finalStatus = 'WAIT'
-					showCashBox(host+' '+finalStatus)
+					if (!finished)
+					{	
+						check.waiting = true
+						finalStatus = 'WAIT'
+						if (!waiterRunning)
+						{
+							waiterRunning = true
+							actualWaiter()
+						}
+					}
+					check.text = host+' '+finalStatus
+					setCashBoxLineTime(check.line, check.when, check.text)
+					screen.render()
+					//showCashBox(host+' '+finalStatus)
 					if (finalStatus != 'cashed')
 						showError(host+' '+finalStatus+':'+shortID(transaction.data.transactionHash,100), "wait")
+					else check.cashed = true
 					break
 				} catch (error)
 				{
@@ -437,36 +601,16 @@ async function actualCasher()
 		} catch (error) {
 			showError('actualCashout:'+error)
 		}
-		if (casherPending.shift() != check)
-			showError("HUH?  casherPending.shift != check?")
-		setCashBoxChecks(casherPending.length)
+		//if (casherPending.shift() != check)
+		//	showError("HUH?  casherPending.shift != check?")
+		var pending=0
+		for (var i=0; i<casherPending.length; i++)
+			if (!casherPending[i].cashing)
+				pending++
+		setCashBoxChecks(pending)
 	}
 	casherRunning = false
 	//showError('actualCasher exiting...')
-}
-
-function refreshCasherPending()
-{
-	casherPending.sort(function(l,r){
-		if (l.uAmount == r.uAmount)	// uAmount is the total amount, amount is only the original amount
-		{
-			if (l.when == r.when)
-			{
-				if (l.URL < r.URL) return -1
-				else if (l.URL > r.URL) return 1
-				else if (l.peer < r.peer) return -1
-				else if (l.peer > r.peer) return 1
-				else return 0	// Peers should never be equal!
-			} else return -(l.when - r.when)
-		} else return -(l.uAmount - r.uAmount)
-	})
-	for (var i=0; i<casherPending.length; i++)
-	{
-		var host = casherPending[i].URL.substring(casherPending[i].URL.length-8)
-
-		setCashBoxLineTime(i+1, casherPending[i].when, casherPending[i].text)
-	}
-	screen.render()
 }
 
 function cashCheck(URL, peer, amount, lastCheck, lastCashout)
@@ -476,7 +620,7 @@ function cashCheck(URL, peer, amount, lastCheck, lastCashout)
 	{
 		if (casherPending[i].URL == URL && casherPending[i].peer == peer)
 		{
-			if (cashoutChecks)
+			if (casherPending[i].cashing)
 			{
 				//showError(host+' Skipping duplicate cash('+peer+') '+colorValue(amount)+colorSpecificDelta(casherPending[i].amount, amount, true))
 			} else
@@ -496,21 +640,12 @@ function cashCheck(URL, peer, amount, lastCheck, lastCashout)
 	}
 	casherPending[casherPending.length] = {when: new Date(), URL: URL, peer: peer, amount: amount, uAmount: amount, lastCheck: lastCheck, lastCashout: lastCashout}
 	setCashBoxChecks(casherPending.length)
-	if (cashoutChecks)
-	{
-		showCashBox(host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true))
-	} else
-	{
-		casherPending[casherPending.length-1].text = host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true)
-		addCashBoxLine(casherPending.length, casherPending[casherPending.length-1].text)
-	}
+
+	casherPending[casherPending.length-1].text = host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true)
+	addCashBoxLine(casherPending.length, casherPending[casherPending.length-1].text)
 	
-	if (!cashoutChecks)
-	{
-		refreshCasherPending()
-		return false
-	}
-	
+	refreshCasherPending()
+
 	if (!casherRunning)
 	{
 		casherRunning = true
