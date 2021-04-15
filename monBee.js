@@ -28,9 +28,14 @@ var paymentThreshold = 10000000000000
 var paymentEarly = 1000000000000
 var paymentTrigger = paymentThreshold - paymentEarly
 
+function specificLocalTime(when)
+{
+	return when.toLocaleTimeString('en-GB')	// en-GB gets a 24hour format, but amazingly local time!
+}
+
 function currentLocalTime()
 {
-	return new Date().toLocaleTimeString('en-GB')	// en-GB gets a 24hour format, but amazingly local time!
+	return specificLocalTime(new Date())
 }
 
 function shortNum(n,plus)
@@ -244,6 +249,12 @@ function showCashBox(text)
 	screen.render()
 }
 
+function setCashBoxLineTime(index,when,text)	// Caller is expected to trigger the render
+{
+	var line = specificLocalTime(when)+' '+text
+	cashBox.setLine(index, line);
+}
+
 function setCashBoxLine(index,text)
 {
 	var line = currentLocalTime()+' '+text
@@ -434,6 +445,30 @@ async function actualCasher()
 	//showError('actualCasher exiting...')
 }
 
+function refreshCasherPending()
+{
+	casherPending.sort(function(l,r){
+		if (l.uAmount == r.uAmount)	// uAmount is the total amount, amount is only the original amount
+		{
+			if (l.when == r.when)
+			{
+				if (l.URL < r.URL) return -1
+				else if (l.URL > r.URL) return 1
+				else if (l.peer < r.peer) return -1
+				else if (l.peer > r.peer) return 1
+				else return 0	// Peers should never be equal!
+			} else return -(l.when - r.when)
+		} else return -(l.uAmount - r.uAmount)
+	})
+	for (var i=0; i<casherPending.length; i++)
+	{
+		var host = casherPending[i].URL.substring(casherPending[i].URL.length-8)
+
+		setCashBoxLineTime(i+1, casherPending[i].when, casherPending[i].text)
+	}
+	screen.render()
+}
+
 function cashCheck(URL, peer, amount, lastCheck, lastCashout)
 {
 	var host = URL.substring(URL.length-8)
@@ -448,26 +483,34 @@ function cashCheck(URL, peer, amount, lastCheck, lastCashout)
 			{
 				if (amount != casherPending[i].uAmount)
 				{
-					setCashBoxLine(i+1, host+' '+colorValue(amount)+colorSpecificDelta(casherPending[i].amount, amount, true))
+					casherPending[i].text = host+' '+colorValue(amount)+colorSpecificDelta(casherPending[i].amount, amount, true)
+					setCashBoxLine(i+1, casherPending[i].text)
 					showError(host+' Delta Check '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true)+colorSpecificDelta(casherPending[i].amount, amount, true)+'\n         '+peer)
 					casherPending[i].uAmount = amount
+					casherPending[i].when = new Date()
+					refreshCasherPending()
 				}
 			}
 			return false
 		}
 	}
-	casherPending[casherPending.length] = {URL: URL, peer: peer, amount: amount, uAmount: amount, lastCheck: lastCheck, lastCashout: lastCashout}
+	casherPending[casherPending.length] = {when: new Date(), URL: URL, peer: peer, amount: amount, uAmount: amount, lastCheck: lastCheck, lastCashout: lastCashout}
 	setCashBoxChecks(casherPending.length)
 	if (cashoutChecks)
 	{
 		showCashBox(host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true))
 	} else
 	{
-		addCashBoxLine(casherPending.length, host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true))
+		casherPending[casherPending.length-1].text = host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true)
+		addCashBoxLine(casherPending.length, casherPending[casherPending.length-1].text)
 	}
 	
-	if (!cashoutChecks) return false
-
+	if (!cashoutChecks)
+	{
+		refreshCasherPending()
+		return false
+	}
+	
 	if (!casherRunning)
 	{
 		casherRunning = true
