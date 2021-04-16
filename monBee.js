@@ -396,21 +396,34 @@ function refreshCasherPending()
 	casherPending.sort(function(l,r){
 		if (l.cashed == r.cashed)
 		{
-			if (l.cashing == r.cashing)
+			if (l.cashed)	// Different sort for cashed checks
 			{
-				if (l.uAmount == r.uAmount)	// uAmount is the total amount, amount is only the original amount
+				if (l.when == r.when)
 				{
-					if (l.when == r.when)
+					if (l.URL < r.URL) return -1
+					else if (l.URL > r.URL) return 1
+					else if (l.peer < r.peer) return -1
+					else if (l.peer > r.peer) return 1
+					else return 0	// Peers should never be equal!
+				} else return (l.when - r.when)
+			} else
+			{
+				if (l.cashing == r.cashing)
+				{
+					if (l.uAmount == r.uAmount)	// uAmount is the total amount, amount is only the original amount
 					{
-						if (l.URL < r.URL) return -1
-						else if (l.URL > r.URL) return 1
-						else if (l.peer < r.peer) return -1
-						else if (l.peer > r.peer) return 1
-						else return 0	// Peers should never be equal!
-					} else return (l.when - r.when)
-				} else return -(l.uAmount - r.uAmount)
-			} else if (l.cashing) return -1	// cashing goes next
-			else return 1	// must be right is cashing
+						if (l.when == r.when)
+						{
+							if (l.URL < r.URL) return -1
+							else if (l.URL > r.URL) return 1
+							else if (l.peer < r.peer) return -1
+							else if (l.peer > r.peer) return 1
+							else return 0	// Peers should never be equal!
+						} else return (l.when - r.when)
+					} else return -(l.uAmount - r.uAmount)
+				} else if (l.cashing) return -1	// cashing goes next
+				else return 1	// must be right is cashing
+			}
 		} else if (l.cashed) return -1	// cashed goes first
 		else return 1	// Must be right is cashed
 	})
@@ -422,9 +435,14 @@ function refreshCasherPending()
 		setCashBoxLineTime(casherPending[i].line, casherPending[i].when, casherPending[i].text)
 	}
 
+	var cashedCount = 0
+	for (i=0; i<casherPending.length; i++)
+		if (casherPending[i].cashed)
+			cashedCount++
 	var removed = false
-	while (casherPending.length > 0 && casherPending[0].cashed)
+	while (cashedCount > objs.length && casherPending.length > 0 && casherPending[0].cashed)
 	{
+		cashedCount--
 		removed = true
 		cashBox.deleteLine(1)	// Scroll the box up by one
 		check = casherPending.shift()	// Remove the cashed check
