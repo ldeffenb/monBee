@@ -382,31 +382,44 @@ function logResponse(method, req, rspData)
 
 function refreshCasherPending()
 {
-	while (casherPending.length > 0 && casherPending[0].cashed)
-	{
-		cashBox.deleteLine(1)	// Scroll the box up by one
-		casherPending.shift()	// Remove the cashed check
-	}
-
 	casherPending.sort(function(l,r){
-		if (l.uAmount == r.uAmount)	// uAmount is the total amount, amount is only the original amount
+		if (l.cashed == r.cashed)
 		{
-			if (l.when == r.when)
+			if (l.cashing == r.cashing)
 			{
-				if (l.URL < r.URL) return -1
-				else if (l.URL > r.URL) return 1
-				else if (l.peer < r.peer) return -1
-				else if (l.peer > r.peer) return 1
-				else return 0	// Peers should never be equal!
-			} else return -(l.when - r.when)
-		} else return -(l.uAmount - r.uAmount)
+				if (l.uAmount == r.uAmount)	// uAmount is the total amount, amount is only the original amount
+				{
+					if (l.when == r.when)
+					{
+						if (l.URL < r.URL) return -1
+						else if (l.URL > r.URL) return 1
+						else if (l.peer < r.peer) return -1
+						else if (l.peer > r.peer) return 1
+						else return 0	// Peers should never be equal!
+					} else return (l.when - r.when)
+				} else return -(l.uAmount - r.uAmount)
+			} else if (l.cashing) return -1	// cashing goes next
+			else return 1	// must be right is cashing
+		} else if (l.cashed) return -1	// cashed goes first
+		else return 1	// Must be right is cashed
 	})
 	for (var i=0; i<casherPending.length; i++)
 	{
 		casherPending[i].line = i+1
 		setCashBoxLineTime(casherPending[i].line, casherPending[i].when, casherPending[i].text)
 	}
-	screen.render()
+
+	var removed = false
+	while (casherPending.length > 0 && casherPending[0].cashed)
+	{
+		removed = true
+		cashBox.deleteLine(1)	// Scroll the box up by one
+		casherPending.shift()	// Remove the cashed check
+	}
+	
+	if (removed)
+		refreshCasherPending()
+	else screen.render()
 }
 
 async function actualWaiter()
@@ -468,7 +481,7 @@ async function actualWaiter()
 					}
 					finished = true
 				}
-				if (!finished) finalStatus = 'WAIT'
+				if (!finished) finalStatus = 'WAIT '+colorValue(check.uAmount)
 				check.text = host+' '+finalStatus
 				setCashBoxLineTime(check.line, check.when, check.text)
 				screen.render()
@@ -488,11 +501,13 @@ async function actualWaiter()
 		//	showError("HUH?  casherPending.shift != check?")
 		var pending=0
 		for (var i=0; i<casherPending.length; i++)
-			if (!casherPending[i].cashing)
+			if (!casherPending[i].cashed)
 				pending++
 		setCashBoxChecks(pending)
+		if (pending == 0) refreshCasherPending()
 		await new Promise(r => setTimeout(r, 10000))	// Check once every 10 seconds
 	}
+	if (casherPending.length == 0) refreshCasherPending()
 	waiterRunning = false
 	//showError('actualCasher exiting...')
 }
@@ -563,7 +578,6 @@ async function actualCasher()
 									if (!casherPending[i].cashing)
 										pending++
 								finalStatus = 'cashed'
-								finalStatus = 'cashed'
 								addCashedCheck(check.uAmount)
 								if (result.data.result.lastPayout != check.uAmount)
 									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+colorValue(check.uAmount-check.amount, true)+'=expected:'+shortNum(check.amount)+" ("+(pending)+" queued)", "wait")
@@ -578,7 +592,7 @@ async function actualCasher()
 					if (!finished)
 					{	
 						check.waiting = true
-						finalStatus = 'WAIT'
+						finalStatus = 'WAIT '+colorValue(check.uAmount)
 						if (!waiterRunning)
 						{
 							waiterRunning = true
@@ -605,9 +619,10 @@ async function actualCasher()
 		//	showError("HUH?  casherPending.shift != check?")
 		var pending=0
 		for (var i=0; i<casherPending.length; i++)
-			if (!casherPending[i].cashing)
+			if (!casherPending[i].cashed)
 				pending++
 		setCashBoxChecks(pending)
+		if (pending == 0) refreshCasherPending()
 	}
 	casherRunning = false
 	//showError('actualCasher exiting...')
@@ -646,7 +661,7 @@ function cashCheck(URL, peer, amount, lastCheck, lastCashout)
 	
 	refreshCasherPending()
 
-	if (!casherRunning)
+	if (!casherRunning && cashoutChecks)
 	{
 		casherRunning = true
 		actualCasher()	// Hopefully this returns on the first async call...
