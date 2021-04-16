@@ -338,6 +338,11 @@ function colorSpecificDelta(previousValue, value, forcePlus)
 
 var lastValues = {}
 
+function clearDelta(name)
+{
+	lastValues[name] = void(0)
+}
+
 function colorDelta(name, value, forcePlus)
 {
 	if (isUndefined(lastValues[name]))
@@ -354,12 +359,18 @@ function colorDelta(name, value, forcePlus)
 	return ''
 }
 
+// Here's my explict code for accessing web3 blockchain APIs without pulling in 350 packages!
+
+
+
+
 var peerMAs = new Map()
 
 //await new Promise(r => setTimeout(r, 2000));
 
 var cashoutChecks= false
 var casherRunning = false
+var nodeCasherRunning = []
 var waiterRunning = false
 var casherPending = []
 
@@ -403,8 +414,10 @@ function refreshCasherPending()
 		} else if (l.cashed) return -1	// cashed goes first
 		else return 1	// Must be right is cashed
 	})
+	var pending=0
 	for (var i=0; i<casherPending.length; i++)
 	{
+		if (!casherPending[i].cashed) pending++
 		casherPending[i].line = i+1
 		setCashBoxLineTime(casherPending[i].line, casherPending[i].when, casherPending[i].text)
 	}
@@ -414,12 +427,17 @@ function refreshCasherPending()
 	{
 		removed = true
 		cashBox.deleteLine(1)	// Scroll the box up by one
-		casherPending.shift()	// Remove the cashed check
+		check = casherPending.shift()	// Remove the cashed check
+		clearDelta(check.URL+':'+check.peer+':amount')	// So a new check for this peer doesn't show a delta
 	}
 	
 	if (removed)
 		refreshCasherPending()
-	else screen.render()
+	else
+	{
+		setCashBoxChecks(pending)
+		screen.render()
+	}
 }
 
 async function actualWaiter()
@@ -512,12 +530,110 @@ async function actualWaiter()
 	//showError('actualCasher exiting...')
 }
 
+async function actualNodeCasher(check)
+{
+	check.cashing = true
+	check.text = check.text + '*'
+	setCashBoxLineTime(check.line, check.when, check.text)
+	screen.render()
+	
+	var host = check.URL.substring(check.URL.length-8)
+	showError(host+' cash:'+check.peer)
+		
+	try
+	{
+		logResponse("GET", check.URL+'/chequebook/cheque/'+check.peer, check.lastCheck)
+		logResponse("GET", check.URL+'/chequebook/cashout/'+check.peer, check.lastCashout)
+		// 1 gwei = 10^9 wei = 1000000000
+		//var transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer}, headers: { 'Gas-Price': '1000000000' }})
+		var transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer})
+		// ???? beeDebug.getLastCashoutAction(v.peer)
+		logResponse("POST", check.URL+'/chequebook/cashout/'+check.peer, transaction.data)
+		showError(host+' trans:'+shortID(transaction.data.transactionHash,100))
+		//showCashBox(host+' '+shortID(check.peer,4)+' '+shortID(transaction.data.transactionHash,4))
+		while (true)
+		{
+			try
+			{
+				var finished = false
+				var finalStatus = "????"
+				for (var t=0; t<60; t++)	// Wait up to 60 seconds for result to appear
+				{
+					var result = await axios({ method: 'get', url: check.URL+'/chequebook/cashout/'+check.peer})
+					//showError(JSON.stringify(result.data))
+					if (isUndefined(result.data.result) || result.data.result == null)
+					{
+						//showError(host+' wait:'+shortID(transaction.data.transactionHash,100), "wait")
+						await new Promise(r => setTimeout(r, 1000))	// Check once/second
+					}
+					else
+					{
+						logResponse("GET", check.URL+'/chequebook/cashout/'+check.peer, result.data)
+						//showError(host+' result='+JSON.stringify(result.data.result))
+						if (result.data.result.bounced)
+							finalStatus = 'BOUNCE'
+						else
+						{
+							var pending=0
+							for (var i=0; i<casherPending.length; i++)
+								if (!casherPending[i].cashing)
+									pending++
+							finalStatus = 'cashed'
+							addCashedCheck(check.uAmount)
+							if (result.data.result.lastPayout != check.uAmount)
+								showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+colorValue(check.uAmount-check.amount, true)+'=expected:'+shortNum(check.amount)+" ("+(pending)+" queued)")
+							else if (check.amount == check.uAmount)
+								showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+" ("+(pending)+" queued)")
+							else showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+colorValue(check.uAmount-check.amount, true)+'='+shortNum(check.uAmount)+" ("+(pending)+" queued)")
+						}
+						finished = true
+						break;
+					}
+				}
+				if (!finished)
+				{	
+					check.waiting = true
+					finalStatus = 'WAIT '+colorValue(check.uAmount)
+					if (!waiterRunning)
+					{
+						waiterRunning = true
+						actualWaiter()
+					}
+				}
+				check.text = host+' '+finalStatus
+				setCashBoxLineTime(check.line, check.when, check.text)
+				screen.render()
+				//showCashBox(host+' '+finalStatus)
+				if (finalStatus != 'cashed')
+					showError(host+' '+finalStatus+':'+shortID(transaction.data.transactionHash,100))
+				else check.cashed = true
+				break
+			} catch (error)
+			{
+				showError('waitCashout:'+error)
+			}
+		}
+	} catch (error) {
+		showError('actualCashout:'+error)
+	}
+
+	var pending=0
+	for (var i=0; i<casherPending.length; i++)
+		if (!casherPending[i].cashed)
+			pending++
+	setCashBoxChecks(pending)
+	if (pending == 0) refreshCasherPending()
+
+	nodeCasherRunning[check.URL] = false
+}
+
 async function actualCasher()
 {
 	//showError('actualCasher running for '+casherPending.length+' checks!')
 	while (casherPending.length > 0)
 	{
 		var check
+		var cashedCount = 0
 		var found = false
 		for (var i=0; i<casherPending.length; i++)
 		{
@@ -525,104 +641,18 @@ async function actualCasher()
 			{
 				found = true
 				check = casherPending[i]
-				break
-			}
+				if (!nodeCasherRunning[check.URL])
+				{
+					nodeCasherRunning[check.URL] = true
+					actualNodeCasher(check)
+				}
+			} else cashedCount++
 		}
 		if (!found) break	// Nothing to cash!
-
-		check.cashing = true
-		check.text = check.text + '*'
-		setCashBoxLineTime(check.line, check.when, check.text)
-		screen.render()
 		
-		var host = check.URL.substring(check.URL.length-8)
-		showError(host+' cash:'+check.peer)
-			
-		//local startTransaction = MOAISim.getDeviceTime()
-		try
-		{
-			logResponse("GET", check.URL+'/chequebook/cheque/'+check.peer, check.lastCheck)
-			logResponse("GET", check.URL+'/chequebook/cashout/'+check.peer, check.lastCashout)
-			// 1 gwei = 10^9 wei = 1000000000
-			//var transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer}, headers: { 'Gas-Price': '1000000000' }})
-			var transaction = await axios({ method: 'post', url: check.URL+'/chequebook/cashout/'+check.peer})
-			// ???? beeDebug.getLastCashoutAction(v.peer)
-			logResponse("POST", check.URL+'/chequebook/cashout/'+check.peer, transaction.data)
-			showError(host+' trans:'+shortID(transaction.data.transactionHash,100))
-			//showCashBox(host+' '+shortID(check.peer,4)+' '+shortID(transaction.data.transactionHash,4))
-			while (true)
-			{
-				try
-				{
-					var finished = false
-					var finalStatus = "????"
-					for (var t=0; t<60; t++)	// Wait up to 60 seconds for result to appear
-					{
-						var result = await axios({ method: 'get', url: check.URL+'/chequebook/cashout/'+check.peer})
-						//showError(JSON.stringify(result.data))
-						if (isUndefined(result.data.result) || result.data.result == null)
-						{
-							showError(host+' wait:'+shortID(transaction.data.transactionHash,100), "wait")
-							await new Promise(r => setTimeout(r, 1000))	// Check once/second
-						}
-						else
-						{
-							logResponse("GET", check.URL+'/chequebook/cashout/'+check.peer, result.data)
-							//showError(host+' result='+JSON.stringify(result.data.result))
-							if (result.data.result.bounced)
-								finalStatus = 'BOUNCE'
-							else
-							{
-								var pending=0
-								for (var i=0; i<casherPending.length; i++)
-									if (!casherPending[i].cashing)
-										pending++
-								finalStatus = 'cashed'
-								addCashedCheck(check.uAmount)
-								if (result.data.result.lastPayout != check.uAmount)
-									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+colorValue(check.uAmount-check.amount, true)+'=expected:'+shortNum(check.amount)+" ("+(pending)+" queued)", "wait")
-								else if (check.amount == check.uAmount)
-									showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+" ("+(pending)+" queued)", "wait")
-								else showError(host+' cashed lastPayout:'+shortNum(result.data.result.lastPayout)+' amount:'+shortNum(check.amount)+colorValue(check.uAmount-check.amount, true)+'='+shortNum(check.uAmount)+" ("+(pending)+" queued)", "wait")
-							}
-							finished = true
-							break;
-						}
-					}
-					if (!finished)
-					{	
-						check.waiting = true
-						finalStatus = 'WAIT '+colorValue(check.uAmount)
-						if (!waiterRunning)
-						{
-							waiterRunning = true
-							actualWaiter()
-						}
-					}
-					check.text = host+' '+finalStatus
-					setCashBoxLineTime(check.line, check.when, check.text)
-					screen.render()
-					//showCashBox(host+' '+finalStatus)
-					if (finalStatus != 'cashed')
-						showError(host+' '+finalStatus+':'+shortID(transaction.data.transactionHash,100), "wait")
-					else check.cashed = true
-					break
-				} catch (error)
-				{
-					showError('waitCashout:'+error)
-				}
-			}
-		} catch (error) {
-			showError('actualCashout:'+error)
-		}
-		//if (casherPending.shift() != check)
-		//	showError("HUH?  casherPending.shift != check?")
-		var pending=0
-		for (var i=0; i<casherPending.length; i++)
-			if (!casherPending[i].cashed)
-				pending++
-		setCashBoxChecks(pending)
-		if (pending == 0) refreshCasherPending()
+		if (cashedCount > 5) refreshCasherPending()
+
+		await new Promise(r => setTimeout(r, 5000))	// Check once/5 seconds
 	}
 	casherRunning = false
 	//showError('actualCasher exiting...')
