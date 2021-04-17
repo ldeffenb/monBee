@@ -176,7 +176,7 @@ function addBoxes()
 	  width: '100%-'+(numWidth*boxWidth),
 	  height: '100%',
 
-	  content: '{center}\n\nThreshold: '+shortNum(paymentThreshold)+'\nEarly:     '+shortNum(paymentEarly)+'\nTrigger:   '+shortNum(paymentTrigger)+'\nBalance {cyan-fg}99%{/cyan-fg}: ~{cyan-fg}'+shortNum((paymentTrigger) * 0.99)+'{/cyan-fg}\nBalance {yellow-fg}98%{/yellow-fg}: ~{yellow-fg}'+shortNum((paymentTrigger) * 0.98)+'{/yellow-fg}{/center}',
+	  content: '{center}\n\n\nThreshold: '+shortNum(paymentThreshold)+'\nEarly:     '+shortNum(paymentEarly)+'\nTrigger:   '+shortNum(paymentTrigger)+'\nBalance {cyan-fg}99%{/cyan-fg}: ~{cyan-fg}'+shortNum((paymentTrigger) * 0.99)+'{/cyan-fg}\nBalance {yellow-fg}98%{/yellow-fg}: ~{yellow-fg}'+shortNum((paymentTrigger) * 0.98)+'{/yellow-fg}{/center}',
 	  scrollable: true,
 	  tags: true,
 	  border: {
@@ -221,12 +221,13 @@ function addBoxes()
 
 var cashBoxStatus = "" //"{yellow-fg}starting{/yellow-fg}"
 var cashBoxChecks = 0
+var cashBoxGasPrice = ""
 
 function refreshCashBoxTitle()
 {
 	var checks = ""
 	if (cashBoxChecks > 0) checks = " c:"+cashBoxChecks
-	cashBox.setLine(0, '{center}{bold}'+currentLocalTime()+'{/bold} '+cashBoxStatus+checks+'{/center}')
+	cashBox.setLine(0, '{center}{bold}'+currentLocalTime()+'{/bold}'+cashBoxStatus+checks+cashBoxGasPrice+'{/center}')
 	screen.render()
 }
 
@@ -239,6 +240,12 @@ function setCashBoxStatus(status)
 function setCashBoxChecks(checks)
 {
 		cashBoxChecks = checks
+		refreshCashBoxTitle()
+}
+
+function setCashBoxGasPrice(gasPrice)
+{
+		cashBoxGasPrice = ' @ '+gasPrice
 		refreshCashBoxTitle()
 }
 
@@ -361,8 +368,180 @@ function colorDelta(name, value, forcePlus)
 
 // Here's my explict code for accessing web3 blockchain APIs without pulling in 350 packages!
 
+var bigZero = BigInt(0)
+var big8 = BigInt(8)
+var big32 = BigInt(32)
+var big10 = BigInt(10)
+var big100 = BigInt(100)
 
+var etherMap = [
+    { name: "wei",           abbr: "wei",	base: BigInt("1") },
+    { name: "kwei",          abbr: "kwei",	base: BigInt("1000") },
+//  { name: "ada",           base: BigInt("1000") },
+//  { name: "femtoether",    base: BigInt("1000") },
+    { name: "mwei",          abbr: "mwei",	base: BigInt("1000000") },
+//  { name: "babbage",       base: BigInt("1000000") },
+//  { name: "picoether",     base: BigInt("1000000") },
+    { name: "gwei",          abbr: "gwei",	base: BigInt("1000000000") },
+//  { name: "shannon",       base: BigInt("1000000000") },
+//  { name: "nanoether",     base: BigInt("1000000000") },
+//  { name: "nano",          base: BigInt("1000000000") },
+//  { name: "szabo",         base: BigInt("1000000000000") },
+    { name: "microether",    abbr: "micro",	base: BigInt("1000000000000") },
+//  { name: "micro",         base: BigInt("1000000000000") },
+//  { name: "finney",        base: BigInt("1000000000000000") },
+    { name: "milliether",    abbr: "milli",	base: BigInt("1000000000000000") },
+//  { name: "milli",         base: BigInt("1000000000000000") },
+    { name: "ether",         abbr: "eth",	base: BigInt("1000000000000000000") },
+    { name: "kether",        abbr: "keth",	base: BigInt("1000000000000000000000") },
+//  { name: "grand",         base: BigInt("1000000000000000000000") },
+//  { name: "einstein",      base: BigInt("1000000000000000000000") },
+    { name: "mether",        abbr: "meth",	base: BigInt("1000000000000000000000000") },
+    { name: "gether",        abbr: "geth",	base: BigInt("1000000000000000000000000000") },
+    { name: "tether",        abbr: "teth",	base: BigInt("1000000000000000000000000000000") }
+	];
 
+function prettyEther(value, abbr)
+{
+	if (typeof(value) == "number") value = BigInt(value)
+	for (var i = etherMap.length-1; i >= 0; i--)
+	{
+		var base = etherMap[i].base
+		if (value >= base)
+		{
+			var result = value/base
+			var remainder = value - result*base
+			
+			if (i > 1 && remainder > bigZero)
+			{
+				var decimal = remainder / etherMap[i-1].base
+				var overage = remainder - decimal*etherMap[i-1].base
+				if (overage == bigZero && (decimal/big100)*big100 == decimal)
+				{
+					result = result+'.'+decimal/big100
+					remainder = bigZero
+				} else if (overage == bigZero && (decimal/big10)*big10 == decimal)
+				{
+					result = result+'.'+decimal/big10
+					remainder = bigZero
+				}
+			}
+		
+			if (abbr && etherMap[i].abbr)
+				result = result+etherMap[i].abbr
+			else
+				result = result+etherMap[i].name
+			if (remainder > bigZero)
+				result = result+"+"
+			return [result, remainder]
+		}
+	}
+	return [value, bigZero]
+}
+
+function fullEther(value, abbr)
+{
+	var [result, remainder] = prettyEther(value, abbr)
+//print(string.format("remainder=%s(%s) bigZero=%s(%s)", type(remainder), tostring(remainder), type(bigZero), tostring(bigZero)))
+	while (remainder > bigZero)
+	{
+		var newPiece
+		[newPiece, remainder] = prettyEther(remainder)
+		result = result+newPiece
+//print(string.format("remainder=%s(%s) bigZero=%s(%s)", type(remainder), tostring(remainder), type(bigZero), tostring(bigZero)))
+	}
+	return result
+}
+
+function justEther(value)
+{
+	if (typeof(value) == "number") value = BigInt(value)
+	var etherBase = BigInt("1000000000000000000")
+	var milBase = BigInt("1000000000000000")
+	var ether = value / etherBase
+	var value = value - ether*etherBase
+	var mils = value / milBase
+	return [ether, mils]
+}
+
+async function executeRPC(URL, method, params)
+{
+	if (isUndefined(params)) params = ""
+	
+	var body = "{\"jsonrpc\":\"2.0\",\"method\":\""+method+"\",\"params\":["+params+"],\"id\":1}"
+
+	try
+	{
+		var response = await axios({ method: 'post', url: URL, headers: {'Content-Type': 'application/JSON'}, data: body})
+	}
+	catch (err)
+	{
+		if (err.response)
+		{	console.error(URL+' response error '+err)
+			//console.error(JSON.stringify(err.response))
+		} else if (err.request)
+		{	console.error(URL+' request error '+err)
+			//console.error(JSON.stringify(err.request))
+		} else
+		{	console.error(URL+' other error '+err)
+			//console.error(JSON.stringify(err))
+		}
+		return void(0)
+	}
+	if (!isUndefined(response.data.error))
+	{	console.error(URL+' method:'+method+' error '+response.data.error.message)
+		return void(0)
+	}
+	if (isUndefined(response.data.result))
+	{	console.error(URL+' method:'+method+' contains no result!')
+		return void (0)
+	}
+	//console.error('response.data.result='+JSON.stringify(response.data.result))
+
+	return await response.data.result
+}
+
+function numericResult(result)
+{
+	var answer = Number(result)
+	if (answer == NaN) return result
+	//console.error('numericResult('+result+')='+answer)
+	return answer
+}
+
+async function getBlockNumber(URL)
+{
+	var blockNumber = await executeRPC(URL, "eth_blockNumber")
+	return numericResult(blockNumber)
+}
+
+async function getGasPrice(URL)
+{
+	var blockNumber = await executeRPC(URL, "eth_gasPrice")
+	return numericResult(blockNumber)
+}
+
+async function getSyncing(URL)
+{
+	var result = await executeRPC(URL, "eth_syncing")
+	if (!isUndefined(result.currentBlock) && !isUndefined(result.highestBlock))
+	{	var current = numericResult(result.currentBlock)
+		var highest = numericResult(result.highestBlock)
+		if (current == highest)
+		{	return highest
+		} else return current+'/'+highest
+	}
+	if (result == false)
+	{	return getBlockNumber(URL)
+	}
+	return JSON.stringify(result)
+}
+
+async function getPeers(URL)
+{
+	var peerCount = await executeRPC(URL, "net_peerCount")
+	return numericResult(peerCount)
+}
 
 var peerMAs = new Map()
 
@@ -373,6 +552,8 @@ var casherRunning = false
 var nodeCasherRunning = []
 var waiterRunning = false
 var casherPending = []
+var gasPrice = 0
+var maxGasPrice = 1500000000	// 1.5gwei
 
 var cashedChecks = 0
 var cashedAmount = 0
@@ -381,8 +562,26 @@ function addCashedCheck(amount)
 {
 	cashedChecks++
 	cashedAmount += amount
-	text = "Cashed: "+cashedChecks+" @ "+shortNum(cashedAmount)
+	var text = "Cashed: "+cashedChecks+" @ "+shortNum(cashedAmount)
 	setCashBoxLine(casherPending.length+1,text)
+	screen.render()
+}
+
+function setGasPrice(gp)
+{
+	gasPrice = gp
+	var fmtGas = fullEther(gasPrice,true)
+	if (fmtGas.length > 10) [fmtGas] = prettyEther(gasPrice, true)
+	if (gasPrice > maxGasPrice)
+			fmtGas = "{red-fg}"+fmtGas+"{/}"
+	else fmtGas = "{green-fg}"+fmtGas+"{/}"
+	setCashBoxGasPrice(fmtGas)
+}
+
+function updateGoerli(block)
+{
+	var text = "Goerli: "+block
+	setCashBoxLine(casherPending.length+2,text)
 	screen.render()
 }
 
@@ -550,6 +749,17 @@ async function actualWaiter()
 
 async function actualNodeCasher(check)
 {
+	while (gasPrice > maxGasPrice)
+	{
+		var safe = check.text
+		check.text = safe + "{red-fg}*{/}"
+		setCashBoxLineTime(check.line, check.when, check.text)
+		screen.render()
+		await new Promise(r => setTimeout(r, 1000))	// Check once/second
+		check.text = safe
+	}
+	
+	
 	check.cashing = true
 	check.text = check.text + '*'
 	setCashBoxLineTime(check.line, check.when, check.text)
@@ -1055,5 +1265,36 @@ async function refreshCashBox()
 	setTimeout(refreshCashBox, 1000);	// Keep a timestamp running
 }
 
+var lastSync = ""
+
+async function pollBlockchain(URL)
+{
+	//var blockNumber = await getBlockNumber(URL)
+	var gasPrice = await getGasPrice(URL)
+	
+	var gp = fullEther(gasPrice,true)
+	if (gp.length > 10) [gp] = prettyEther(gasPrice, true)
+	
+	//console.error("blockNumber="+blockNumber+' gas='+shortNum(gasPrice)+' or '+gp)
+	var sync = await getSyncing(URL)
+	//var peers = await getPeers(URL)
+	//console.error('sync:'+sync)
+	//console.error('peers:'+peers)
+	if (Number(sync))
+		sync = "{green-fg}"+sync+"{/}"
+	else sync = "{red-fg}"+sync+"{/}"
+	setGasPrice(gasPrice)
+	var timeout = 1000
+	if (sync != lastSync)
+	{
+		if (Number(sync)) timeout = 10000	// synced and just changed, sleep 10 seconds
+		lastSync = sync
+		updateGoerli(sync)
+	}
+	setTimeout(pollBlockchain, timeout, URL)
+}
+
 refreshScreens()
 refreshCashBox()
+maxGasPrice = 1500000000	// 1500000000 = 1.5gwei  1000000000 = 1gwei
+//pollBlockchain("http://192.168.10.17:8546")	// Set your swap-endpoint here
