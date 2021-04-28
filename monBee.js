@@ -91,9 +91,9 @@ function shortNum(n,plus)
 	return result
 }
 
-// Create a screen object.
 var screen = blessed.screen({
-  smartCSR: true
+  smartCSR: true,
+  dockBorders : true,
 });
 
 screen.title = 'monBee';
@@ -368,6 +368,8 @@ function colorDelta(name, value, forcePlus)
 
 // Here's my explict code for accessing web3 blockchain APIs without pulling in 350 packages!
 
+var blockchainURL
+
 var bigZero = BigInt(0)
 var big8 = BigInt(8)
 var big32 = BigInt(32)
@@ -543,6 +545,13 @@ async function getPeers(URL)
 	return numericResult(peerCount)
 }
 
+async function getPendingCount(URL)
+{
+	var pending = await executeRPC(URL, "eth_pendingTransactions")
+	//console.error(JSON.stringify(pending))
+	return pending.length
+}
+
 var peerMAs = new Map()
 
 //await new Promise(r => setTimeout(r, 2000));
@@ -553,6 +562,7 @@ var nodeCasherRunning = []
 var waiterRunning = false
 var casherPending = []
 var gasPrice = 0
+var pendingTransactions = 0
 var maxGasPrice = 1500000000	// 1.5gwei
 
 var cashedChecks = 0
@@ -567,14 +577,19 @@ function addCashedCheck(amount)
 	screen.render()
 }
 
-function setGasPrice(gp)
+function setGasPrice(gp, pendingCount)
 {
 	gasPrice = gp
+	pendingTransactions = pendingCount
 	var fmtGas = fullEther(gasPrice,true)
 	if (fmtGas.length > 10) [fmtGas] = prettyEther(gasPrice, true)
 	if (gasPrice > maxGasPrice)
 			fmtGas = "{red-fg}"+fmtGas+"{/}"
 	else fmtGas = "{green-fg}"+fmtGas+"{/}"
+	if (pendingCount > 0)
+		fmtPending = "{red-fg} *"+pendingCount+"{/}"
+	else fmtPending = "{green-fg} *"+pendingCount+"{/}"
+	if (!isUndefined(pendingCount)) fmtGas = fmtGas+fmtPending
 	setCashBoxGasPrice(fmtGas)
 }
 
@@ -716,7 +731,7 @@ async function actualWaiter()
 					}
 					finished = true
 				}
-				if (!finished) finalStatus = 'WAIT '+colorValue(check.uAmount)
+				if (!finished) finalStatus = 'W-'+colorValue(check.uAmount)
 				check.text = host+' '+finalStatus
 				setCashBoxLineTime(check.line, check.when, check.text)
 				screen.render()
@@ -749,7 +764,7 @@ async function actualWaiter()
 
 async function actualNodeCasher(check)
 {
-	while (gasPrice > maxGasPrice)
+	while (gasPrice > maxGasPrice && (pendingTransactions > 0 || waiterRunning))
 	{
 		var safe = check.text
 		check.text = safe + "{red-fg}*{/}"
@@ -821,7 +836,7 @@ async function actualNodeCasher(check)
 				if (!finished)
 				{	
 					check.waiting = true
-					finalStatus = 'WAIT '+colorValue(check.uAmount)
+					finalStatus = 'W-'+colorValue(check.uAmount)
 					if (!waiterRunning)
 					{
 						waiterRunning = true
@@ -886,7 +901,7 @@ async function actualCasher()
 	//showError('actualCasher exiting...')
 }
 
-function cashCheck(URL, peer, amount, lastCheck, lastCashout)
+function cashCheck(URL, ethereum, peer, amount, lastCheck, lastCashout)
 {
 	var host = URL.substring(URL.length-8)
 	for (var i=0; i<casherPending.length; i++)
@@ -911,7 +926,7 @@ function cashCheck(URL, peer, amount, lastCheck, lastCashout)
 			return false
 		}
 	}
-	casherPending[casherPending.length] = {when: new Date(), URL: URL, peer: peer, amount: amount, uAmount: amount, lastCheck: lastCheck, lastCashout: lastCashout}
+	casherPending[casherPending.length] = {when: new Date(), URL: URL, ethereum: ethereum, peer: peer, amount: amount, uAmount: amount, lastCheck: lastCheck, lastCashout: lastCashout}
 	setCashBoxChecks(casherPending.length)
 
 	casherPending[casherPending.length-1].text = host+' '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true)
@@ -950,6 +965,7 @@ class beeMonitor
 	{
 		var addresses = await axios({ method: 'get', url: this.URL+'/addresses' })
 		this.address = addresses.data.overlay
+		this.ethereum = addresses.data.ethereum
 		for (var i=0; i<addresses.data.underlay.length; i++)
 		{
 			var p = addresses.data.overlay
@@ -1028,7 +1044,7 @@ class beeMonitor
 						if (v.lastreceived.payout > cashout.data.cumulativePayout)
 						{
 							totalcashable = totalcashable + 1
-							if (!cashCheck(URL, v.peer, v.lastreceived.payout-cashout.data.cumulativePayout, v, cashout.data))
+							if (!cashCheck(URL, this.ethereum, v.peer, v.lastreceived.payout-cashout.data.cumulativePayout, v, cashout.data))
 								totalpending = totalpending + 1
 							foundOne = true
 						}
@@ -1175,7 +1191,7 @@ class beeMonitor
 		var elapsed = Math.trunc((new Date() - start)/1000+0.5)
 		
 		this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {blue-fg}'+elapsed+'s{/blue-fg}{/center}')
-		this.box.setLine(1, '{center}Connected: '+peers.data.peers.length+this.colorDelta('connected',peers.data.peers.length,true)+' Addr: '+leftID(this.address,10)+'{/center}')
+		this.box.setLine(1, '{center}Connected: '+peers.data.peers.length+this.colorDelta('connected',peers.data.peers.length,true)+' Addr: {bold}'+leftID(this.address,10)+'{/bold}{/center}')
 		this.box.setLine(2, '{center}Peers: '+balances.data.balances.length+''+this.colorDelta('peers',balances.data.balances.length,true)+
 						' Net:'+this.colorValue(totalNet)+this.colorSpecificDelta(this.startingNet,totalNet)+'{/center}')
 		this.box.setLine(3, '{center}CheckBook: '+this.colorValue(checkbook.data.totalBalance)+'('+this.colorValue(checkbook.data.availableBalance)+')'+this.colorDelta('checkbook',checkbook.data.availableBalance,true)+'{/center}')
@@ -1269,32 +1285,45 @@ var lastSync = ""
 
 async function pollBlockchain(URL)
 {
-	//var blockNumber = await getBlockNumber(URL)
-	var gasPrice = await getGasPrice(URL)
-	
-	var gp = fullEther(gasPrice,true)
-	if (gp.length > 10) [gp] = prettyEther(gasPrice, true)
-	
-	//console.error("blockNumber="+blockNumber+' gas='+shortNum(gasPrice)+' or '+gp)
-	var sync = await getSyncing(URL)
-	//var peers = await getPeers(URL)
-	//console.error('sync:'+sync)
-	//console.error('peers:'+peers)
-	if (Number(sync))
-		sync = "{green-fg}"+sync+"{/}"
-	else sync = "{red-fg}"+sync+"{/}"
-	setGasPrice(gasPrice)
 	var timeout = 1000
-	if (sync != lastSync)
+	try 
 	{
-		if (Number(sync)) timeout = 10000	// synced and just changed, sleep 10 seconds
-		lastSync = sync
-		updateGoerli(sync)
+		blockchainURL = URL
+		//var blockNumber = await getBlockNumber(URL)
+		var gasPrice = await getGasPrice(URL)
+		var pending = await getPendingCount(URL)
+		
+		var gp = fullEther(gasPrice,true)
+		if (gp.length > 10) [gp] = prettyEther(gasPrice, true)
+		
+		//console.error("blockNumber="+blockNumber+' gas='+shortNum(gasPrice)+' or '+gp)
+		var sync = await getSyncing(URL)
+		//var peers = await getPeers(URL)
+		//console.error('sync:'+sync)
+		//console.error('peers:'+peers)
+		if (Number(sync))
+			sync = "{green-fg}"+sync+"{/}"
+		else sync = "{red-fg}"+sync+"{/}"
+		
+		//console.error(`pending=${pending}`)
+		
+		setGasPrice(gasPrice, pending)
+		//setGasPrice(gasPrice)
+		if (sync != lastSync)
+		{
+			if (Number(sync)) timeout = 10000	// synced and just changed, sleep 10 seconds
+			lastSync = sync
+			updateGoerli(sync)
+		}
+	} catch (error)
+	{	showError('pollBlockchain:'+error);
+		timeout = 10000	// Don't beat it up if we're having errors
 	}
 	setTimeout(pollBlockchain, timeout, URL)
 }
 
 refreshScreens()
 refreshCashBox()
-maxGasPrice = 1500000000	// 1500000000 = 1.5gwei  1000000000 = 1gwei
+maxGasPrice = 2000000000	// 1500000000 = 1.5gwei  1000000000 = 1gwei
 //pollBlockchain("http://192.168.10.17:8546")	// Set your swap-endpoint here
+//pollBlockchain("https://rpc.slock.it/goerli")
