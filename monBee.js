@@ -1140,7 +1140,14 @@ class beeMonitor
 		
 		const settlements = await axios({ method: 'get', url: debugURL+'/settlements' })
 		// beeDebug.getAllSettlements()
-		var netSettle = settlements.data.totalreceived-settlements.data.totalsent
+		var settleReceived = settlements.data.totalReceived
+		var settleSent = settlements.data.totalSent
+		if (isUndefined(settleSent) && !isUndefined(settlements.data.totalsent))	// 0.5.3 node support
+		{
+			settleSent = settlements.data.totalsent
+			settleReceived = settlements.data.totalreceived
+		}
+		var netSettle = settlements.data.totalReceived-settlements.data.totalSent
 		
 		var checkbook = await axios({ method: 'get', url: debugURL+'/chequebook/balance' })
 		//var balance = await this.beeDebug.getChequebookBalance()
@@ -1197,8 +1204,8 @@ class beeMonitor
 		this.box.setLine(3, '{center}CheckBook: '+this.colorValue(checkbook.data.totalBalance)+'('+this.colorValue(checkbook.data.availableBalance)+')'+this.colorDelta('checkbook',checkbook.data.availableBalance,true)+'{/center}')
 		//this.box.setLine(3, '{center}CheckBook: '+this.colorValue(balance.totalBalance)+'('+this.colorValue(balance.availableBalance)+')'+this.colorDelta('checkbook',balance.availableBalance,true)+'{/center}')
 		this.box.setLine(4, cashLine)
-		this.box.setLine(5, '{center}Settled: '+this.colorValue(settlements.data.totalreceived)+this.colorValue(-settlements.data.totalsent)+'='+this.colorValue(netSettle)+this.colorDelta('netSettle',netSettle)+'{/center}')
-		this.box.setLine(6, '{center}Balance: '+this.colorValue(posTotal)+this.colorValue(negTotal)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
+		this.box.setLine(5, '{center}Settled: '+this.colorValue(settleReceived)+this.colorValue(-settleSent,true)+'='+this.colorValue(netSettle)+this.colorDelta('netSettle',netSettle)+'{/center}')
+		this.box.setLine(6, '{center}Balance: '+this.colorValue(posTotal)+this.colorValue(negTotal,true)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
 		} catch (error)
 		{	showError('refresh:'+error)
 			this.box.setContent("")
@@ -1325,5 +1332,5 @@ async function pollBlockchain(URL)
 refreshScreens()
 refreshCashBox()
 maxGasPrice = 2000000000	// 1500000000 = 1.5gwei  1000000000 = 1gwei
-//pollBlockchain("http://192.168.10.17:8546")	// Set your swap-endpoint here
+pollBlockchain("http://192.168.10.17:8546")	// Set your swap-endpoint here
 //pollBlockchain("https://rpc.slock.it/goerli")
