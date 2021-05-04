@@ -1147,7 +1147,7 @@ class beeMonitor
 			settleSent = settlements.data.totalsent
 			settleReceived = settlements.data.totalreceived
 		}
-		var netSettle = settlements.data.totalReceived-settlements.data.totalSent
+		var netSettle = settleReceived-settleSent
 		
 		var checkbook = await axios({ method: 'get', url: debugURL+'/chequebook/balance' })
 		//var balance = await this.beeDebug.getChequebookBalance()
