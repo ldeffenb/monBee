@@ -1332,5 +1332,5 @@ async function pollBlockchain(URL)
 refreshScreens()
 refreshCashBox()
 maxGasPrice = 2000000000	// 1500000000 = 1.5gwei  1000000000 = 1gwei
-pollBlockchain("http://192.168.10.17:8546")	// Set your swap-endpoint here
+//pollBlockchain("http://192.168.10.17:8546")	// Set your swap-endpoint here
 //pollBlockchain("https://rpc.slock.it/goerli")
