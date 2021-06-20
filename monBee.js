@@ -24,8 +24,8 @@ function isUndefined(value){
 //const tag = await bee.createTag()
 //box.setContent(tag)
 
-var paymentThreshold = 10000000000000
-var paymentEarly = 1000000000000
+var paymentThreshold = 100000000
+var paymentEarly = 10000000
 var paymentTrigger = paymentThreshold - paymentEarly
 
 function specificLocalTime(when)
@@ -117,7 +117,7 @@ screen.key(['tab'], function (ch, key) {
 })
 
 var numWidth = 2		// This is horizontal boxes
-var numLines = 9		// This is per box
+var numLines = 10		// This is per box
 
 function createBox(URL)
 {
@@ -296,6 +296,12 @@ function showError(text, tag)
 	screen.render()
 }
 
+function showLogError(text)
+{
+	if (!debugging) console.error(currentLocalTime()+' '+text)
+	showError(text)
+}
+
 // If box is focused, handle `enter`/`return` and give us some more content.
 //box.key('enter', function(ch, key) {
   //box.setContent('{right}Even different {black-fg}content{/black-fg}.{/right}\n');
@@ -349,6 +355,12 @@ var lastValues = {}
 function clearDelta(name)
 {
 	lastValues[name] = void(0)
+}
+
+function valueChanged(name, value)
+{
+	if (isUndefined(lastValues[name])) return true;
+	return lastValues[name] != value;
 }
 
 function colorDelta(name, value, forcePlus)
@@ -954,12 +966,13 @@ class beeMonitor
 	{
 		this.URL = url
 		this.lastValues = {}
+		this.closePeers = {}
 		this.cashedChecks = 0
 		this.box = createBox(url)
+		this.topoLoaded = false
 		//this.beeDebug = new BeeDebug(url)
 		if (!cashNOW)
 			this.cashLast = new Date()	// Defining this will defer a full check pass
-
 
 		// Work around spelling misteak (sic) on getChequebookBalance pending correction
 		//if (isUndefined(this.beeDebug.getChequebookBalance))
@@ -989,6 +1002,11 @@ class beeMonitor
 	{
 		return colorValue(value, forcePlus)
 	}
+	
+	valueChanged(name, value)
+	{
+		return valueChanged(this.URL+':'+name)
+	}
 
 	colorDelta(name, value, forcePlus)
 	{
@@ -1002,6 +1020,7 @@ class beeMonitor
 
 	async captureCashes(URL, connected)
 	{
+		this.refreshTitle("/cheques")
 		var cashes = await axios({ method: 'get', url: URL+'/chequebook/cheque' })
 		// beeDebug.getLastCheques()
 
@@ -1018,12 +1037,14 @@ class beeMonitor
 			{
 			if (v.lastreceived != null && !isUndefined(v.lastreceived.payout))
 			{
-				totalreceived = totalreceived + v.lastreceived.payout
+				var receivedPayout = parseInt(v.lastreceived.payout,10)
+				totalreceived = totalreceived + receivedPayout
 				try
 				{
 					var cashout
 					try
-					{	cashout = await axios({ method: 'get', url: URL+'/chequebook/cashout/'+v.peer})
+					{	this.refreshTitle((i+1)+'/'+cashes.data.lastcheques.length, (i==0 || i==cashes.data.lastcheques.length-1))
+						cashout = await axios({ method: 'get', url: URL+'/chequebook/cashout/'+v.peer})
 						// beeDebug.getLastCashoutAction(v.peer)
 
 					} catch (error) {
@@ -1045,23 +1066,25 @@ class beeMonitor
 					checkCount = checkCount + 1
 					if (!isUndefined(cashout.data.cumulativePayout))
 					{
-						totalcashed = totalcashed + cashout.data.cumulativePayout
-						if (v.lastreceived.payout > cashout.data.cumulativePayout)
+						var cumulativePayout = parseInt(cashout.data.cumulativePayout,10)
+						totalcashed = totalcashed + cumulativePayout
+						if (receivedPayout > cumulativePayout)
 						{
 							totalcashable = totalcashable + 1
-							if (!cashCheck(URL, this.ethereum, v.peer, v.lastreceived.payout-cashout.data.cumulativePayout, v, cashout.data))
+							if (!cashCheck(URL, this.ethereum, v.peer, receivedPayout-cumulativePayout, v, cashout.data))
 								totalpending = totalpending + 1
 							foundOne = true
 						}
 					} else if (!isUndefined(cashout.data.uncashedAmount))
 					{
+						var uncashedAmount = parseInt(cashout.data.uncashedAmount,10)
 						if (!isUndefined(cashout.data.lastCashedCheque) && cashout.data.lastCashedCheque != null
 						&& !isUndefined(cashout.data.lastCashedCheque.payout) && cashout.data.lastCashedCheque.payout != null)
-							totalcashed = totalcashed + cashout.data.lastCashedCheque.payout
-						if (cashout.data.uncashedAmount > 0)
+							totalcashed = totalcashed + parseInt(cashout.data.lastCashedCheque.payout,10)
+						if (uncashedAmount > 0)
 						{
 							totalcashable = totalcashable + 1
-							if (!cashCheck(URL, this.ethereum, v.peer, cashout.data.uncashedAmount, v, cashout.data))
+							if (!cashCheck(URL, this.ethereum, v.peer, uncashedAmount, v, cashout.data))
 								totalpending = totalpending + 1
 							foundOne = true
 						}
@@ -1077,26 +1100,111 @@ class beeMonitor
 
 		return {totalreceived, totalcashed, totalcashable, totalpending}
 	}
+	
+	async refreshTopo ()
+	{
+//  "baseAddr": "03ed575c4681446d6d3d647f955265b90306e203a8cea0257218b209ed143efb",
+//  "population": 200598,
+//  "connected": 65,
+//  "timestamp": "2021-05-21T11:29:07.2359363-04:00",
+//  "nnLowWatermark": 2,
+//  "depth": 1,
+//  "bins": {
+		
+		if (this.topoActive) return
+		this.topoActive = true
+		try
+		{
+		if (isUndefined(this.lastTopo)) this.lastTopo = "/topology"
+		this.box.setLine(2, '{center}'+this.lastTopo+' {red-fg}'+currentLocalTime()+'{/red-fg}{/center}')
+		var topoTime = new Date()
+		const topo = await axios({ method: 'get', url: this.URL+'/topology' })
+		topoTime = Math.trunc((new Date() - topoTime)/1000+0.5)
+		
+		function colorBin(previous, current)
+		{
+			if (isUndefined(previous)) return current;
+			if (previous == current) return current;
+			if (previous < current) return "{green-fg}"+current+"{/}"
+			if (previous > current) return "{red-fg}"+current+"{/}"
+			return "?"+current+"?"
+		}
+		
+		var topoBins = ""
+		if (isUndefined(this.lastBins)) this.lastBins = topo.data.bins
+		topoBins = topoBins + colorBin(this.lastBins.bin_0.connected, topo.data.bins.bin_0.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_1.connected, topo.data.bins.bin_1.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_2.connected, topo.data.bins.bin_2.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_3.connected, topo.data.bins.bin_3.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_4.connected, topo.data.bins.bin_4.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_5.connected, topo.data.bins.bin_5.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_6.connected, topo.data.bins.bin_6.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_7.connected, topo.data.bins.bin_7.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_8.connected, topo.data.bins.bin_8.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_9.connected, topo.data.bins.bin_9.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_10.connected, topo.data.bins.bin_10.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_11.connected, topo.data.bins.bin_11.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_12.connected, topo.data.bins.bin_12.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_13.connected, topo.data.bins.bin_13.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_14.connected, topo.data.bins.bin_14.connected)
+		topoBins = topoBins + " " + colorBin(this.lastBins.bin_15.connected, topo.data.bins.bin_15.connected)
+		
+		this.lastBins = topo.data.bins
+		this.lastTopo = 'Topo: '+topo.data.connected+'/'+topo.data.population+''+this.colorDelta('topoconnected',topo.data.connected,true)+
+						' Depth:{yellow-fg}'+topo.data.depth+'{/}'+this.colorDelta("topodepth",topo.data.depth)
+		this.box.setLine(2, '{center}'+this.lastTopo+' '+currentLocalTime().substring(0,5)+' {blue-fg}'+topoTime+'s{/blue-fg}{/center}')
+		this.box.setLine(9, '{center}'+topoBins+'{/center}')
+		screen.render()
+		this.topoActive = false
+		this.topoLoaded = true
+		} catch (error)
+		{	showError('refreshTopo:'+error)
+			this.box.setContent("")
+			this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {red-fg}FAILED{/red-fg}{/center}')
+		}
+	}
+
+	async refreshTitle(what, force) {
+		if (isUndefined(force)) force = true
+		if (!force)
+		{	if (!isUndefined(this.lastTitle))
+			{	var elapsed = Math.trunc((new Date() - this.lastTitle)/1000+0.5)
+				force = elapsed > 0
+			}
+		}
+		if (force)
+		{	this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {red-fg}'+what+'{/red-fg}{/center}')
+			this.lastTitle = new Date()
+			screen.render()
+		}
+	}
 
 	async refreshBox () {
 
 		var start = new Date()
-		this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {red-fg}refresh{/red-fg}{/center}')
-		screen.render()
-
+		this.refreshTitle("refresh")
 		var debugURL = this.URL
 	
 		try
 		{
+		this.refreshTitle("/peers")
 		const peers = await axios({ method: 'get', url: debugURL+'/peers' })
 
 		var connected = {}
-		for (var i=0; i<peers.data.peers.length; i++)
-		{	connected[peers.data.peers[i].address] = true
+		var peerCount = 0
+		if (peers.data.peers != null)
+		{
+			peerCount = peers.data.peers.length
+			for (var i=0; i<peers.data.peers.length; i++)
+			{	connected[peers.data.peers[i].address] = true
+			}
 		}
 		
 		if (isUndefined(this.multiAddr) || isUndefined(this.address))
+		{
+			this.refreshTitle("/address")
 			await this.populateMultiAddr()
+		}
 		if (crossConnect)
 		{
 			if (!isUndefined(this.multiAddr))
@@ -1122,66 +1230,10 @@ class beeMonitor
 			//else showError(debugURL+' ma='+this.multiAddr)
 		}
 	
-//  "baseAddr": "03ed575c4681446d6d3d647f955265b90306e203a8cea0257218b209ed143efb",
-//  "population": 200598,
-//  "connected": 65,
-//  "timestamp": "2021-05-21T11:29:07.2359363-04:00",
-//  "nnLowWatermark": 2,
-//  "depth": 1,
-//  "bins": {
-		
-		var topoTime = new Date()
-	    const topo = await axios({ method: 'get', url: debugURL+'/topology' })
-		topoTime = Math.trunc((new Date() - topoTime)/1000+0.5)
-		
-		function colorBin(previous, current)
-		{
-			if (isUndefined(previous)) return current;
-			if (previous == current) return current;
-			if (previous < current) return "{green-fg}"+current+"{/}"
-			if (previous > current) return "{red-fg}"+current+"{/}"
-			return "?"+current+"?"
-		}
-		
-		var topoBins = ""
-		//topoBins = topoBins + topo.data.bins.bin_0.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_1.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_2.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_3.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_4.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_5.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_6.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_7.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_8.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_9.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_10.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_11.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_12.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_13.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_14.connected
-		//topoBins = topoBins + " " + topo.data.bins.bin_15.connected
-		
-		if (isUndefined(this.lastBins)) this.lastBins = topo.data.bins
-		topoBins = topoBins + colorBin(this.lastBins.bin_0.connected, topo.data.bins.bin_0.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_1.connected, topo.data.bins.bin_1.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_2.connected, topo.data.bins.bin_2.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_3.connected, topo.data.bins.bin_3.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_4.connected, topo.data.bins.bin_4.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_5.connected, topo.data.bins.bin_5.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_6.connected, topo.data.bins.bin_6.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_7.connected, topo.data.bins.bin_7.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_8.connected, topo.data.bins.bin_8.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_9.connected, topo.data.bins.bin_9.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_10.connected, topo.data.bins.bin_10.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_11.connected, topo.data.bins.bin_11.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_12.connected, topo.data.bins.bin_12.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_13.connected, topo.data.bins.bin_13.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_14.connected, topo.data.bins.bin_14.connected)
-		topoBins = topoBins + " " + colorBin(this.lastBins.bin_15.connected, topo.data.bins.bin_15.connected)
-		
-		this.lastBins = topo.data.bins
-		
+		this.refreshTitle("/balances")
 		const balances = await axios({ method: 'get', url: debugURL+'/balances' })
+		this.refreshTitle("/consumed")
+		const consumed = await axios({ method: 'get', url: debugURL+'/consumed' })
 		// beeDebug.getAllBalances()
 		
 		var negTotal = 0
@@ -1189,27 +1241,58 @@ class beeMonitor
 		var closeCount = 0
 		var reallyCloseCount = 0
 		var biggestBalance = 0
+		var biggestPeer = ""
 		
+		function logClosePeer(which, peer, balance)
+		{
+			if (isUndefined(which.closePeers)) which.closePeers = {}
+			if (isUndefined(which.closePeers[peer])) which.closePeers[peer] = 0
+			if (which.closePeers[peer] != balance)
+			{
+				var prevPercent = Math.trunc(which.closePeers[peer]*100/paymentTrigger)
+				var percent = Math.trunc(balance*100/paymentTrigger)
+				if (percent > 89)
+					showLogError(which.closePeers[peer]+'->'+balance+'='+percent+'% '+peer+' '+which.URL)
+				else if (prevPercent > 89 && balance < which.closePeers[peer])
+					showLogError(which.closePeers[peer]+'<-'+balance+'=<'+percent+'% '+peer+' '+which.URL)
+				which.closePeers[peer] = balance
+				return true
+			}
+			return false
+		}
+
+		var peerChanged = {}
 		for (var i=0; i<balances.data.balances.length; i++)
 		{
 			var b = balances.data.balances[i]
-			if (b.balance < 0)
-				negTotal = negTotal + b.balance
-			else if (b.balance > 0)
+			var bal = parseInt(b.balance,10)
+			if (bal < 0)
+				negTotal = negTotal + bal
+			else if (bal > 0)
 			{
-				posTotal = posTotal + b.balance
+				posTotal = posTotal + bal
 				if (connected[b.peer])
 				{
-					if (b.balance > (paymentTrigger) * 0.99)
+//if (!isUndefined(this.closePeers[b.peer]))
+//if (this.closePeers[b.peer] > bal)
+//{
+//var percent = Math.trunc(bal*1000000/paymentTrigger)/10000.0
+//showLogError(this.closePeers[b.peer]+'<-'+bal+'='+percent+'% '+b.peer+' '+this.URL)
+//}
+					if (bal > (paymentTrigger) * 0.99)
 						reallyCloseCount = reallyCloseCount + 1
-					else if (b.balance > (paymentTrigger) * 0.98)
+					else if (bal > (paymentTrigger) * 0.98)
 						closeCount = closeCount + 1
-					else if (b.balance > biggestBalance)
-						biggestBalance = b.balance
+					else if (bal > biggestBalance)
+					{
+						biggestBalance = bal
+						biggestPeer = b.peer
+					}
+					peerChanged[b.peer] = logClosePeer(this, b.peer, bal)
 				}
 			}
 		}
-		
+	
 		var balTotal = negTotal + posTotal
 		var closeString = ""
 		if (reallyCloseCount > 0)
@@ -1219,19 +1302,66 @@ class beeMonitor
 		else if (biggestBalance > (paymentTrigger)*0.75)
 			closeString = ' >{yellow-fg}'+(Math.trunc(biggestBalance*100/paymentTrigger))+'%{/yellow-fg}'
 		else if (biggestBalance > 0)
-			closeString = ' >{magenta-fg}'+(Math.trunc(biggestBalance*100/paymentTrigger))+'%{/magenta-fg}'
+		{
+			var percent = Math.trunc(biggestBalance*100/paymentTrigger)
+			if (percent > 0)
+				closeString = ' >{magenta-fg}'+percent+'%{/magenta-fg}'
+			else
+			{
+				closeString = ' <{red-fg}1%{/red-fg}'
+				if (peerChanged[biggestPeer])
+				{
+					var percent = Math.trunc(biggestBalance*1000000/paymentTrigger)/10000.0
+					showLogError('Closest:'+biggestBalance+' or '+percent+'% '+biggestPeer+' '+this.URL)
+				}
+			}
+		}
+
+
+		var cnegTotal = 0
+		var cposTotal = 0
 		
+		for (var i=0; i<consumed.data.balances.length; i++)
+		{
+			var b = consumed.data.balances[i]
+			var bal = parseInt(b.balance,10)
+			if (bal < 0)
+				cnegTotal = cnegTotal + bal
+			else if (bal > 0)
+			{
+				cposTotal = cposTotal + bal
+			}
+		}
+	
+		var cbalTotal = cnegTotal + cposTotal
+
+
+
+		this.refreshTitle("/settle")
 		const settlements = await axios({ method: 'get', url: debugURL+'/settlements' })
 		// beeDebug.getAllSettlements()
-		var settleReceived = settlements.data.totalReceived
-		var settleSent = settlements.data.totalSent
-		if (isUndefined(settleSent) && !isUndefined(settlements.data.totalsent))	// 0.5.3 node support
+		var settleReceived = parseInt(settlements.data.totalReceived,10)
+		var settleSent = parseInt(settlements.data.totalSent,10)
+		if (isUndefined(settleSent) && !isUndefined(parseInt(settlements.data.totalsent,10)))	// 0.5.3 node support
 		{
-			settleSent = settlements.data.totalsent
-			settleReceived = settlements.data.totalreceived
+			settleSent = parseInt(settlements.data.totalsent,10)
+			settleReceived = parseInt(settlements.data.totalreceived,10)
 		}
 		var netSettle = settleReceived-settleSent
 		
+		this.refreshTitle("/pseudo")
+		const tsettlements = await axios({ method: 'get', url: debugURL+'/timesettlements' })
+		// beeDebug.getAllSettlements()
+		var tsettleReceived = parseInt(tsettlements.data.totalReceived,10)
+		var tsettleSent = parseInt(tsettlements.data.totalSent,10)
+		if (isUndefined(tsettleSent) && !isUndefined(parseInt(tsettlements.data.totalsent,10)))	// 0.5.3 node support
+		{
+			tsettleSent = parseInt(tsettlements.data.totalsent,10)
+			tsettleReceived = parseInt(tsettlements.data.totalreceived,10)
+		}
+		var tnetSettle = tsettleReceived-tsettleSent
+		
+		this.refreshTitle("/balance")
 		var checkbook = await axios({ method: 'get', url: debugURL+'/chequebook/balance' })
 		//var balance = await this.beeDebug.getChequebookBalance()
 		
@@ -1280,25 +1410,28 @@ class beeMonitor
 
 		var elapsed = Math.trunc((new Date() - start)/1000+0.5)
 		
+		if (!this.topoLoaded || peers.data.peers != null)
+			if (this.topoLoaded || this.valueChanged('connected',peerCount))
+				this.refreshTopo()
+		
 		this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {blue-fg}'+elapsed+'s{/blue-fg}{/center}')
-		this.box.setLine(1, '{center}Connected: '+peers.data.peers.length+this.colorDelta('connected',peers.data.peers.length,true)+' Addr: {bold}'+leftID(this.address,10)+'{/bold}{/center}')
+		this.box.setLine(1, '{center}Connected: '+peerCount+this.colorDelta('connected',peerCount,true)+' Addr: {bold}'+leftID(this.address,10)+'{/bold}{/center}')
 
 //  "population": 200598,
 //  "connected": 65,
 //  "timestamp": "2021-05-21T11:29:07.2359363-04:00",
 //  "nnLowWatermark": 2,
 //  "depth": 1,
-		this.box.setLine(2, '{center}Topo: '+topo.data.connected+'/'+topo.data.population+''+this.colorDelta('topoconnected',topo.data.connected,true)+
-						' Depth:'+topo.data.depth+this.colorDelta("topodepth",topo.data.depth)+' {blue-fg}'+topoTime+'s{/blue-fg}{/center}')
-		this.box.setLine(8, '{center}'+topoBins+'{/center}')
 
 		this.box.setLine(3, '{center}Peers: '+balances.data.balances.length+''+this.colorDelta('peers',balances.data.balances.length,true)+
 						' Net:'+this.colorValue(totalNet)+this.colorSpecificDelta(this.startingNet,totalNet)+'{/center}')
-		this.box.setLine(4, '{center}CheckBook: '+this.colorValue(checkbook.data.totalBalance)+'('+this.colorValue(checkbook.data.availableBalance)+')'+this.colorDelta('checkbook',checkbook.data.availableBalance,true)+'{/center}')
+		this.box.setLine(4, '{center}CheckBook: '+this.colorValue(parseInt(checkbook.data.totalBalance,10))+'('+this.colorValue(parseInt(checkbook.data.availableBalance,10))+')'+this.colorDelta('checkbook',parseInt(checkbook.data.availableBalance,10),true)+'{/center}')
 		//this.box.setLine(3, '{center}CheckBook: '+this.colorValue(balance.totalBalance)+'('+this.colorValue(balance.availableBalance)+')'+this.colorDelta('checkbook',balance.availableBalance,true)+'{/center}')
 		this.box.setLine(5, cashLine)
 		this.box.setLine(6, '{center}Settled: '+this.colorValue(settleReceived)+this.colorValue(-settleSent,true)+'='+this.colorValue(netSettle)+this.colorDelta('netSettle',netSettle)+'{/center}')
-		this.box.setLine(7, '{center}Balance: '+this.colorValue(posTotal)+this.colorValue(negTotal,true)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
+		this.box.setLine(7, '{center}Pseudo: '+this.colorValue(tsettleReceived)+this.colorValue(-tsettleSent,true)+'='+this.colorValue(tnetSettle)+this.colorDelta('tnetSettle',tnetSettle)+'{/center}')
+		this.box.setLine(8, '{center}Balance: '+this.colorValue(posTotal)+this.colorValue(negTotal,true)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
+		//this.box.setLine(8, '{center}Consume: '+this.colorValue(cposTotal)+this.colorValue(cnegTotal,true)+'='+this.colorValue(cbalTotal)+this.colorDelta('cbalance',cbalTotal)+' '+this.colorValue(balTotal-cbalTotal)+'{/center}')
 		} catch (error)
 		{	showError('refresh:'+error)
 			this.box.setContent("")
@@ -1430,4 +1563,3 @@ refreshScreens()
 refreshCashBox()
 maxGasPrice = 20000000000	// 20gwei	// 1500000000 = 1.5gwei  1000000000 = 1gwei
 //pollBlockchain("http://192.168.10.17:8546")	// Set your swap-endpoint here
-//pollBlockchain("https://rpc.slock.it/goerli")
