@@ -1472,7 +1472,10 @@ if (objs.length < 1)
 addBoxes()
 if (cashNOW) showError("Cashing ALL checks NOW!")
 else if (cashoutChecks) showError("Cashing checks!")
-else showError("Monitoring checks")
+else {
+	showError("Use --cashNOW to immediately cash checks  --cashout to do it later")
+	showError("Monitoring checks")
+}
 screen.render()
 
 async function testIt()
