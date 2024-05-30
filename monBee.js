@@ -107,7 +107,7 @@ var boxCount = 0
 var boxes = []	// for focus tabbing
 var boxFocus = 0
 var boxColors = [ 'white', 'blue', 'red', 'green', 'magenta', 'yellow' ]
-var boxWidth = 45
+var boxWidth = 48
 
 screen.key(['tab'], function (ch, key) {
 	boxes[boxFocus].style.border.fg = 'white'
@@ -117,7 +117,7 @@ screen.key(['tab'], function (ch, key) {
 })
 
 var numWidth = 2		// This is horizontal boxes
-var numLines = 10		// This is per box
+var numLines = 11		// This is per box
 
 function createBox(URL)
 {
@@ -611,7 +611,7 @@ function setGasPrice(gp, pendingCount)
 
 function updateGoerli(block)
 {
-	var text = "Goerli: "+block
+	var text = "gnosis: "+block
 	setCashBoxLine(casherPending.length+2,text)
 	screen.render()
 }
@@ -933,7 +933,7 @@ function cashCheck(URL, ethereum, peer, amount, lastCheck, lastCashout)
 				{
 					casherPending[i].text = host+' '+colorValue(amount)+colorSpecificDelta(casherPending[i].amount, amount, true)
 					setCashBoxLine(i+1, casherPending[i].text)
-					showError(host+' Delta Check '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true)+colorSpecificDelta(casherPending[i].amount, amount, true)+'\n         '+peer)
+					showLogError(host+' Delta Check '+colorValue(amount)+colorDelta(URL+':'+peer+':amount', amount, true)+colorSpecificDelta(casherPending[i].amount, amount, true)+'\n         '+peer)
 					casherPending[i].uAmount = amount
 					casherPending[i].when = new Date()
 					refreshCasherPending()
@@ -970,6 +970,9 @@ class beeMonitor
 		this.cashedChecks = 0
 		this.box = createBox(url)
 		this.topoLoaded = false
+		this.topoPending = false
+		this.topoLastElapsed = 0
+		this.topoLastRefresh = new Date()
 		//this.beeDebug = new BeeDebug(url)
 		if (!cashNOW)
 			this.cashLast = new Date()	// Defining this will defer a full check pass
@@ -996,6 +999,9 @@ class beeMonitor
 				break
 			}
 		}
+		var nodeStatus = await axios({ method: 'get', url: this.URL+'/node' })
+		this.beeMode = nodeStatus.data.beeMode
+		this.swapEnabled = nodeStatus.data.swapEnabled
 	}
 
 	colorValue(value, forcePlus)
@@ -1101,7 +1107,7 @@ class beeMonitor
 		return {totalreceived, totalcashed, totalcashable, totalpending}
 	}
 	
-	async refreshTopo ()
+	async refreshTopo (refreshIt)
 	{
 //  "baseAddr": "03ed575c4681446d6d3d647f955265b90306e203a8cea0257218b209ed143efb",
 //  "population": 200598,
@@ -1111,8 +1117,24 @@ class beeMonitor
 //  "depth": 1,
 //  "bins": {
 		
-		if (this.topoActive) return
+		if (this.topoActive)
+		{
+			if (refreshIt) this.topoPending = true
+			return
+		}
+
+		var idleTime = Math.trunc((new Date() - this.topoLastRefresh)/1000+0.5)
+		if (idleTime < this.topoLastElapsed)
+		{
+			if (refreshIt) this.topoPending = true
+			return
+		}
+		
+		if (!refreshIt && !this.topoPending)
+			return
+		
 		this.topoActive = true
+		this.topoPending = false
 		try
 		{
 		if (isUndefined(this.lastTopo)) this.lastTopo = "/topology"
@@ -1120,6 +1142,8 @@ class beeMonitor
 		var topoTime = new Date()
 		const topo = await axios({ method: 'get', url: this.URL+'/topology' })
 		topoTime = Math.trunc((new Date() - topoTime)/1000+0.5)
+		this.topoLastElapsed = topoTime
+		this.topoLastRefresh = new Date()
 		
 		function colorBin(previous, current)
 		{
@@ -1148,12 +1172,32 @@ class beeMonitor
 		topoBins = topoBins + " " + colorBin(this.lastBins.bin_13.connected, topo.data.bins.bin_13.connected)
 		topoBins = topoBins + " " + colorBin(this.lastBins.bin_14.connected, topo.data.bins.bin_14.connected)
 		topoBins = topoBins + " " + colorBin(this.lastBins.bin_15.connected, topo.data.bins.bin_15.connected)
+
+		var topoBins2 = ""
+		if (isUndefined(this.lastBins)) this.lastBins = topo.data.bins
+		topoBins2 = topoBins2 + colorBin(this.lastBins.bin_0.population, topo.data.bins.bin_0.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_1.population, topo.data.bins.bin_1.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_2.population, topo.data.bins.bin_2.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_3.population, topo.data.bins.bin_3.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_4.population, topo.data.bins.bin_4.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_5.population, topo.data.bins.bin_5.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_6.population, topo.data.bins.bin_6.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_7.population, topo.data.bins.bin_7.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_8.population, topo.data.bins.bin_8.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_9.population, topo.data.bins.bin_9.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_10.population, topo.data.bins.bin_10.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_11.population, topo.data.bins.bin_11.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_12.population, topo.data.bins.bin_12.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_13.population, topo.data.bins.bin_13.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_14.population, topo.data.bins.bin_14.population)
+		topoBins2 = topoBins2 + " " + colorBin(this.lastBins.bin_15.population, topo.data.bins.bin_15.population)
 		
 		this.lastBins = topo.data.bins
 		this.lastTopo = 'Topo: '+topo.data.connected+'/'+topo.data.population+''+this.colorDelta('topoconnected',topo.data.connected,true)+
 						' Depth:{yellow-fg}'+topo.data.depth+'{/}'+this.colorDelta("topodepth",topo.data.depth)
 		this.box.setLine(2, '{center}'+this.lastTopo+' '+currentLocalTime().substring(0,5)+' {blue-fg}'+topoTime+'s{/blue-fg}{/center}')
 		this.box.setLine(9, '{center}'+topoBins+'{/center}')
+		this.box.setLine(10, '{center}'+topoBins2+'{/center}')
 		screen.render()
 		this.topoActive = false
 		this.topoLoaded = true
@@ -1165,6 +1209,7 @@ class beeMonitor
 	}
 
 	async refreshTitle(what, force) {
+		//showError('refreshTitle:'+what)
 		if (isUndefined(force)) force = true
 		if (!force)
 		{	if (!isUndefined(this.lastTitle))
@@ -1187,251 +1232,286 @@ class beeMonitor
 	
 		try
 		{
-		this.refreshTitle("/peers")
-		const peers = await axios({ method: 'get', url: debugURL+'/peers' })
+			this.refreshTitle("/peers")
+			const peers = await axios({ method: 'get', url: debugURL+'/peers' })
 
-		var connected = {}
-		var peerCount = 0
-		if (peers.data.peers != null)
-		{
-			peerCount = peers.data.peers.length
-			for (var i=0; i<peers.data.peers.length; i++)
-			{	connected[peers.data.peers[i].address] = true
-			}
-		}
-		
-		if (isUndefined(this.multiAddr) || isUndefined(this.address))
-		{
-			this.refreshTitle("/address")
-			await this.populateMultiAddr()
-		}
-		if (crossConnect)
-		{
-			if (!isUndefined(this.multiAddr))
+			var connected = {}
+			var peerCount = 0
+			if (peers.data.peers != null)
 			{
-				for (let [p, ma] of peerMAs.entries())
-				{
-					if (ma != this.multiAddr)
-					{	if (!connected[p])
-						{
-							try
-							{	const connection = await axios({ method: 'post', url: debugURL+'/connect'+ma })
-								if (connection.data.address == p)
-								{	showError(debugURL+' connected to '+ma)
-								} else showError(debugURL+' connected to '+JSON.stringify(connection.data.address))
-							} catch (error)
-							{	showError('connect:'+error)
-							}
-						}
-						//else showError(debugURL+' already connected to '+ma)
-					}
+				peerCount = peers.data.peers.length
+				for (var i=0; i<peers.data.peers.length; i++)
+				{	connected[peers.data.peers[i].address] = true
 				}
 			}
-			//else showError(debugURL+' ma='+this.multiAddr)
-		}
-	
-		this.refreshTitle("/balances")
-		const balances = await axios({ method: 'get', url: debugURL+'/balances' })
-		this.refreshTitle("/consumed")
-		const consumed = await axios({ method: 'get', url: debugURL+'/consumed' })
-		// beeDebug.getAllBalances()
-		
-		var negTotal = 0
-		var posTotal = 0
-		var closeCount = 0
-		var reallyCloseCount = 0
-		var biggestBalance = 0
-		var biggestPeer = ""
-		
-		function logClosePeer(which, peer, balance)
-		{
-			if (isUndefined(which.closePeers)) which.closePeers = {}
-			if (isUndefined(which.closePeers[peer])) which.closePeers[peer] = 0
-			if (which.closePeers[peer] != balance)
+			
+			if (isUndefined(this.multiAddr) || isUndefined(this.address))
 			{
-				var prevPercent = Math.trunc(which.closePeers[peer]*100/paymentTrigger)
-				var percent = Math.trunc(balance*100/paymentTrigger)
-				if (percent > 89)
-					showLogError(which.closePeers[peer]+'->'+balance+'='+percent+'% '+peer+' '+which.URL)
-				else if (prevPercent > 89 && balance < which.closePeers[peer])
-					showLogError(which.closePeers[peer]+'<-'+balance+'=<'+percent+'% '+peer+' '+which.URL)
-				which.closePeers[peer] = balance
-				return true
+				this.refreshTitle("/address")
+				await this.populateMultiAddr()
 			}
-			return false
-		}
-
-		var peerChanged = {}
-		for (var i=0; i<balances.data.balances.length; i++)
-		{
-			var b = balances.data.balances[i]
-			var bal = parseInt(b.balance,10)
-			if (bal < 0)
-				negTotal = negTotal + bal
-			else if (bal > 0)
+			if (crossConnect)
 			{
-				posTotal = posTotal + bal
-				if (connected[b.peer])
+				if (!isUndefined(this.multiAddr))
 				{
-//if (!isUndefined(this.closePeers[b.peer]))
-//if (this.closePeers[b.peer] > bal)
-//{
-//var percent = Math.trunc(bal*1000000/paymentTrigger)/10000.0
-//showLogError(this.closePeers[b.peer]+'<-'+bal+'='+percent+'% '+b.peer+' '+this.URL)
-//}
-					if (bal > (paymentTrigger) * 0.99)
-						reallyCloseCount = reallyCloseCount + 1
-					else if (bal > (paymentTrigger) * 0.98)
-						closeCount = closeCount + 1
-					else if (bal > biggestBalance)
+					for (let [p, ma] of peerMAs.entries())
 					{
-						biggestBalance = bal
-						biggestPeer = b.peer
+						if (ma != this.multiAddr)
+						{	if (!connected[p])
+							{
+								try
+								{	const connection = await axios({ method: 'post', url: debugURL+'/connect'+ma })
+									if (connection.data.address == p)
+									{	showError(debugURL+' connected to '+ma)
+									} else showError(debugURL+' connected to '+JSON.stringify(connection.data.address))
+								} catch (error)
+								{	showError('connect:'+error)
+								}
+							}
+							//else showError(debugURL+' already connected to '+ma)
+						}
 					}
-					peerChanged[b.peer] = logClosePeer(this, b.peer, bal)
 				}
+				//else showError(debugURL+' ma='+this.multiAddr)
 			}
-		}
-	
-		var balTotal = negTotal + posTotal
-		var closeString = ""
-		if (reallyCloseCount > 0)
-			closeString = ' ~{cyan-fg}'+reallyCloseCount+'{/cyan-fg}'
-		else if (closeCount > 0)
-			closeString = ' ~{yellow-fg}'+closeCount+'{/yellow-fg}'
-		else if (biggestBalance > (paymentTrigger)*0.75)
-			closeString = ' >{yellow-fg}'+(Math.trunc(biggestBalance*100/paymentTrigger))+'%{/yellow-fg}'
-		else if (biggestBalance > 0)
-		{
-			var percent = Math.trunc(biggestBalance*100/paymentTrigger)
-			if (percent > 0)
-				closeString = ' >{magenta-fg}'+percent+'%{/magenta-fg}'
-			else
+		
+			this.refreshTitle("/balances")
+			const balances = await axios({ method: 'get', url: debugURL+'/balances' })
+			this.refreshTitle("/consumed")
+			const consumed = await axios({ method: 'get', url: debugURL+'/consumed' })
+			// beeDebug.getAllBalances()
+			
+			var negTotal = 0
+			var posTotal = 0
+			var closeCount = 0
+			var reallyCloseCount = 0
+			var biggestBalance = 0
+			var biggestPeer = ""
+			
+			function logClosePeer(which, peer, balance)
 			{
-				closeString = ' <{red-fg}1%{/red-fg}'
-				if (peerChanged[biggestPeer])
+				if (isUndefined(which.closePeers)) which.closePeers = {}
+				if (isUndefined(which.closePeers[peer])) which.closePeers[peer] = 0
+				if (which.closePeers[peer] != balance)
 				{
-					var percent = Math.trunc(biggestBalance*1000000/paymentTrigger)/10000.0
-					showLogError('Closest:'+biggestBalance+' or '+percent+'% '+biggestPeer+' '+this.URL)
+					var prevPercent = Math.trunc(which.closePeers[peer]*100/paymentTrigger)
+					var percent = Math.trunc(balance*100/paymentTrigger)
+					if (percent > 89)
+						showLogError(which.closePeers[peer]+'->'+balance+'='+percent+'% '+peer+' '+which.URL)
+					else if (prevPercent > 89 && balance < which.closePeers[peer])
+						showLogError(which.closePeers[peer]+'<-'+balance+'=<'+percent+'% '+peer+' '+which.URL)
+					which.closePeers[peer] = balance
+					return true
+				}
+				return false
+			}
+
+			var peerChanged = {}
+			for (var i=0; i<balances.data.balances.length; i++)
+			{
+				var b = balances.data.balances[i]
+				var bal = parseInt(b.balance,10)
+				if (bal < 0)
+					negTotal = negTotal + bal
+				else if (bal > 0)
+				{
+					posTotal = posTotal + bal
+					if (connected[b.peer])
+					{
+	//if (!isUndefined(this.closePeers[b.peer]))
+	//if (this.closePeers[b.peer] > bal)
+	//{
+	//var percent = Math.trunc(bal*1000000/paymentTrigger)/10000.0
+	//showLogError(this.closePeers[b.peer]+'<-'+bal+'='+percent+'% '+b.peer+' '+this.URL)
+	//}
+						if (bal > (paymentTrigger) * 0.99)
+							reallyCloseCount = reallyCloseCount + 1
+						else if (bal > (paymentTrigger) * 0.98)
+							closeCount = closeCount + 1
+						else if (bal > biggestBalance)
+						{
+							biggestBalance = bal
+							biggestPeer = b.peer
+						}
+						peerChanged[b.peer] = logClosePeer(this, b.peer, bal)
+					}
 				}
 			}
-		}
-
-
-		var cnegTotal = 0
-		var cposTotal = 0
 		
-		for (var i=0; i<consumed.data.balances.length; i++)
-		{
-			var b = consumed.data.balances[i]
-			var bal = parseInt(b.balance,10)
-			if (bal < 0)
-				cnegTotal = cnegTotal + bal
-			else if (bal > 0)
+			var balTotal = negTotal + posTotal
+			var closeString = ""
+			if (reallyCloseCount > 0)
+				closeString = ' ~{cyan-fg}'+reallyCloseCount+'{/cyan-fg}'
+			else if (closeCount > 0)
+				closeString = ' ~{yellow-fg}'+closeCount+'{/yellow-fg}'
+			else if (biggestBalance > (paymentTrigger)*0.75)
+				closeString = ' >{yellow-fg}'+(Math.trunc(biggestBalance*100/paymentTrigger))+'%{/yellow-fg}'
+			else if (biggestBalance > 0)
 			{
-				cposTotal = cposTotal + bal
+				var percent = Math.trunc(biggestBalance*100/paymentTrigger)
+				if (percent > 0)
+					closeString = ' >{magenta-fg}'+percent+'%{/magenta-fg}'
+				else
+				{
+					closeString = ' <{red-fg}1%{/red-fg}'
+					if (peerChanged[biggestPeer])
+					{
+						var percent = Math.trunc(biggestBalance*1000000/paymentTrigger)/10000.0
+						showLogError('Closest:'+biggestBalance+' or '+percent+'% '+biggestPeer+' '+this.URL)
+					}
+				}
 			}
-		}
-	
-		var cbalTotal = cnegTotal + cposTotal
 
 
-
-		this.refreshTitle("/settle")
-		const settlements = await axios({ method: 'get', url: debugURL+'/settlements' })
-		// beeDebug.getAllSettlements()
-		var settleReceived = parseInt(settlements.data.totalReceived,10)
-		var settleSent = parseInt(settlements.data.totalSent,10)
-		if (isUndefined(settleSent) && !isUndefined(parseInt(settlements.data.totalsent,10)))	// 0.5.3 node support
-		{
-			settleSent = parseInt(settlements.data.totalsent,10)
-			settleReceived = parseInt(settlements.data.totalreceived,10)
-		}
-		var netSettle = settleReceived-settleSent
-		
-		this.refreshTitle("/pseudo")
-		const tsettlements = await axios({ method: 'get', url: debugURL+'/timesettlements' })
-		// beeDebug.getAllSettlements()
-		var tsettleReceived = parseInt(tsettlements.data.totalReceived,10)
-		var tsettleSent = parseInt(tsettlements.data.totalSent,10)
-		if (isUndefined(tsettleSent) && !isUndefined(parseInt(tsettlements.data.totalsent,10)))	// 0.5.3 node support
-		{
-			tsettleSent = parseInt(tsettlements.data.totalsent,10)
-			tsettleReceived = parseInt(tsettlements.data.totalreceived,10)
-		}
-		var tnetSettle = tsettleReceived-tsettleSent
-		
-		this.refreshTitle("/balance")
-		var checkbook = await axios({ method: 'get', url: debugURL+'/chequebook/balance' })
-		//var balance = await this.beeDebug.getChequebookBalance()
-		
-		var cashLine = ""
-		if (isUndefined(this.cashLast) || (new Date()-this.cashLast) > 5*60*1000)	// Time for a full pass, every 5 minutes in msec
-		{
-			var startScan = new Date()
+			var cnegTotal = 0
+			var cposTotal = 0
 			
-			this.cashLast = new Date()
-			var cashes = await this.captureCashes(debugURL)	// get ALL peers
-			var netCashed = cashes.totalreceived-cashes.totalcashed
-			var cashable = ""
-			if (cashes.totalcashable > 0)
+			for (var i=0; i<consumed.data.balances.length; i++)
 			{
-				this.cashedChecks = this.cashedChecks + cashes.totalcashable - cashes.totalpending
-				cashable = ' '+this.colorValue(cashes.totalcashable)+'!'
+				var b = consumed.data.balances[i]
+				var bal = parseInt(b.balance,10)
+				if (bal < 0)
+					cnegTotal = cnegTotal + bal
+				else if (bal > 0)
+				{
+					cposTotal = cposTotal + bal
+				}
 			}
-			var cashed = ""
-			if (this.cashedChecks > 0) cashed = this.colorValue(this.cashedChecks)+' '
-			cashLine = '{center}'+cashed+'CHECKS: '+this.colorValue(cashes.totalreceived)+this.colorValue(-cashes.totalcashed,true)+'='+this.colorValue(netCashed)+this.colorDelta('CASHED',netCashed)+cashable+'{/center}'
+		
+			var cbalTotal = cnegTotal + cposTotal
+
+
+			if (this.swapEnabled)
+			{
+				this.refreshTitle("/settle")
+				var settleReceived, settleSent, netSettle
+				try {
+					const settlements = await axios({ method: 'get', url: debugURL+'/settlements' })
+					// beeDebug.getAllSettlements()
+					settleReceived = parseInt(settlements.data.totalReceived,10)
+					settleSent = parseInt(settlements.data.totalSent,10)
+					if (isUndefined(settleSent) && !isUndefined(parseInt(settlements.data.totalsent,10)))	// 0.5.3 node support
+					{
+						settleSent = parseInt(settlements.data.totalsent,10)
+						settleReceived = parseInt(settlements.data.totalreceived,10)
+					}
+					netSettle = settleReceived-settleSent
+				} catch (err) {
+					if (err.toString() != this.settleErr) {
+						showError(`/settlements ${err}`)
+						this.settleErr = err.toString()
+					}
+				}
+			}
 			
-			if (isUndefined(this.cashShort)) this.cashShort = 0
-			var elapsed = new Date()-startScan
-			var host = debugURL.substring(debugURL.length-8)
-			//showCashBox(host+' full '+elapsed+'ms vs '+this.cashShort+'ms')
-		} else	// Just do a connected peer pass
-		{
-			var startScan = new Date()
-
-			var cashes = await this.captureCashes(debugURL, connected)	// get just connected peers
-			var netCashed = cashes.totalreceived-cashes.totalcashed
-			var cashable = ""
-			if (cashes.totalcashable > 0)
+			this.refreshTitle("/pseudo")
+			const tsettlements = await axios({ method: 'get', url: debugURL+'/timesettlements' })
+			// beeDebug.getAllSettlements()
+			var tsettleReceived = parseInt(tsettlements.data.totalReceived,10)
+			var tsettleSent = parseInt(tsettlements.data.totalSent,10)
+			if (isUndefined(tsettleSent) && !isUndefined(parseInt(tsettlements.data.totalsent,10)))	// 0.5.3 node support
 			{
-				this.cashedChecks = this.cashedChecks + cashes.totalcashable - cashes.totalpending
-				cashable = ' '+this.colorValue(cashes.totalcashable)+'!'
+				tsettleSent = parseInt(tsettlements.data.totalsent,10)
+				tsettleReceived = parseInt(tsettlements.data.totalreceived,10)
 			}
-			var cashed = ""
-			if (this.cashedChecks > 0) cashed = this.colorValue(this.cashedChecks)+' '
-			cashLine = '{center}'+cashed+'Checks: '+this.colorValue(cashes.totalreceived)+this.colorValue(-cashes.totalcashed,true)+'='+this.colorValue(netCashed)+this.colorDelta('cashed',netCashed)+cashable+'{/center}'
-			this.cashShort = new Date() - startScan
-		}
-		
-		var totalNet = balTotal + netSettle
-		if (isUndefined(this.startingNet)) this.startingNet = totalNet
+			var tnetSettle = tsettleReceived-tsettleSent
+			
+			var checkbook = null
+			if (this.swapEnabled)
+			{
+				try
+				{
+					this.refreshTitle("/balance")
+					checkbook = await axios({ method: 'get', url: debugURL+'/chequebook/balance' })
+					//var balance = await this.beeDebug.getChequebookBalance()
+				} catch (err) {
+					showError(`/chequebook/balance ${err}`)
+					checkbook = null
+				}
+			}
+			
+			var cashLine = ""
+			if (this.swapEnabled)
+			{
+				try
+				{
+					if (isUndefined(this.cashLast) || (new Date()-this.cashLast) > 5*60*1000)	// Time for a full pass, every 5 minutes in msec
+					{
+						var startScan = new Date()
+						
+						this.cashLast = new Date()
+						var cashes = await this.captureCashes(debugURL)	// get ALL peers
+						var netCashed = cashes.totalreceived-cashes.totalcashed
+						var cashable = ""
+						if (cashes.totalcashable > 0)
+						{
+							this.cashedChecks = this.cashedChecks + cashes.totalcashable - cashes.totalpending
+							cashable = ' '+this.colorValue(cashes.totalcashable)+'!'
+						}
+						var cashed = ""
+						if (this.cashedChecks > 0) cashed = this.colorValue(this.cashedChecks)+' '
+						cashLine = '{center}'+cashed+'CHECKS: '+this.colorValue(cashes.totalreceived)+this.colorValue(-cashes.totalcashed,true)+'='+this.colorValue(netCashed)+this.colorDelta('CASHED',netCashed)+cashable+'{/center}'
+						
+						if (isUndefined(this.cashShort)) this.cashShort = 0
+						var elapsed = new Date()-startScan
+						var host = debugURL.substring(debugURL.length-8)
+						//showCashBox(host+' full '+elapsed+'ms vs '+this.cashShort+'ms')
+					} else	// Just do a connected peer pass
+					{
+						var startScan = new Date()
 
-		var elapsed = Math.trunc((new Date() - start)/1000+0.5)
-		
-		if (!this.topoLoaded || peers.data.peers != null)
-			if (this.topoLoaded || this.valueChanged('connected',peerCount))
-				this.refreshTopo()
-		
-		this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {blue-fg}'+elapsed+'s{/blue-fg}{/center}')
-		this.box.setLine(1, '{center}Connected: '+peerCount+this.colorDelta('connected',peerCount,true)+' Addr: {bold}'+leftID(this.address,10)+'{/bold}{/center}')
+						var cashes = await this.captureCashes(debugURL, connected)	// get just connected peers
+						var netCashed = cashes.totalreceived-cashes.totalcashed
+						var cashable = ""
+						if (cashes.totalcashable > 0)
+						{
+							this.cashedChecks = this.cashedChecks + cashes.totalcashable - cashes.totalpending
+							cashable = ' '+this.colorValue(cashes.totalcashable)+'!'
+						}
+						var cashed = ""
+						if (this.cashedChecks > 0) cashed = this.colorValue(this.cashedChecks)+' '
+						cashLine = '{center}'+cashed+'Checks: '+this.colorValue(cashes.totalreceived)+this.colorValue(-cashes.totalcashed,true)+'='+this.colorValue(netCashed)+this.colorDelta('cashed',netCashed)+cashable+'{/center}'
+						this.cashShort = new Date() - startScan
+					}
+				} catch (err) {
+					cashLine = '{center}Checks: N/A{/center}'
+				}
+			} else cashLine = '{center}Checks: NOT swapEnabled{/center}'
+			
+			var totalNet = balTotal + netSettle
+			if (!netSettle) totalNet = balTotal
+			if (isUndefined(this.startingNet)) this.startingNet = totalNet
 
-//  "population": 200598,
-//  "connected": 65,
-//  "timestamp": "2021-05-21T11:29:07.2359363-04:00",
-//  "nnLowWatermark": 2,
-//  "depth": 1,
+			var elapsed = Math.trunc((new Date() - start)/1000+0.5)
+			
+			if (!this.topoLoaded || peers.data.peers != null)
+				if (!this.topoLoaded || this.valueChanged('connected',peerCount))
+					this.refreshTopo(true)
+			this.refreshTopo(false)
+			
+			this.box.setLine(-1, '{center}{bold}'+currentLocalTime()+' '+this.URL+'{/bold} {blue-fg}'+elapsed+'s{/blue-fg}{/center}')
+			this.box.setLine(1, '{center}Connected: '+peerCount+this.colorDelta('connected',peerCount,true)+' Addr: {bold}'+leftID(this.address,10)+'{/bold}{/center}')
 
-		this.box.setLine(3, '{center}Peers: '+balances.data.balances.length+''+this.colorDelta('peers',balances.data.balances.length,true)+
-						' Net:'+this.colorValue(totalNet)+this.colorSpecificDelta(this.startingNet,totalNet)+'{/center}')
-		this.box.setLine(4, '{center}CheckBook: '+this.colorValue(parseInt(checkbook.data.totalBalance,10))+'('+this.colorValue(parseInt(checkbook.data.availableBalance,10))+')'+this.colorDelta('checkbook',parseInt(checkbook.data.availableBalance,10),true)+'{/center}')
-		//this.box.setLine(3, '{center}CheckBook: '+this.colorValue(balance.totalBalance)+'('+this.colorValue(balance.availableBalance)+')'+this.colorDelta('checkbook',balance.availableBalance,true)+'{/center}')
-		this.box.setLine(5, cashLine)
-		this.box.setLine(6, '{center}Settled: '+this.colorValue(settleReceived)+this.colorValue(-settleSent,true)+'='+this.colorValue(netSettle)+this.colorDelta('netSettle',netSettle)+'{/center}')
-		this.box.setLine(7, '{center}Pseudo: '+this.colorValue(tsettleReceived)+this.colorValue(-tsettleSent,true)+'='+this.colorValue(tnetSettle)+this.colorDelta('tnetSettle',tnetSettle)+'{/center}')
-		this.box.setLine(8, '{center}Balance: '+this.colorValue(posTotal)+this.colorValue(negTotal,true)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
-		//this.box.setLine(8, '{center}Consume: '+this.colorValue(cposTotal)+this.colorValue(cnegTotal,true)+'='+this.colorValue(cbalTotal)+this.colorDelta('cbalance',cbalTotal)+' '+this.colorValue(balTotal-cbalTotal)+'{/center}')
+	//  "population": 200598,
+	//  "connected": 65,
+	//  "timestamp": "2021-05-21T11:29:07.2359363-04:00",
+	//  "nnLowWatermark": 2,
+	//  "depth": 1,
+
+			this.box.setLine(3, '{center}Peers: '+balances.data.balances.length+''+this.colorDelta('peers',balances.data.balances.length,true)+
+							' Net:'+this.colorValue(totalNet)+this.colorSpecificDelta(this.startingNet,totalNet)+'{/center}')
+			if (checkbook)
+				this.box.setLine(4, '{center}CheckBook: '+this.colorValue(parseInt(checkbook.data.totalBalance,10))+'('+this.colorValue(parseInt(checkbook.data.availableBalance,10))+')'+this.colorDelta('checkbook',parseInt(checkbook.data.availableBalance,10),true)+'{/center}')
+			else this.box.setLine(4, '{center}CheckBook: NONE{/center}')
+			//this.box.setLine(3, '{center}CheckBook: '+this.colorValue(balance.totalBalance)+'('+this.colorValue(balance.availableBalance)+')'+this.colorDelta('checkbook',balance.availableBalance,true)+'{/center}')
+			this.box.setLine(5, cashLine)
+			if (!isUndefined(settleReceived) && !isUndefined(settleSent) && !isUndefined(netSettle))
+				this.box.setLine(6, '{center}Settled: '+this.colorValue(settleReceived)+this.colorValue(-settleSent,true)+'='+this.colorValue(netSettle)+this.colorDelta('netSettle',netSettle)+'{/center}')
+			else this.box.setLine(6, '{center}Settled: N/A{/center}')
+			//else this.box.setLine(6, `{center}Settled: N/A ${settleReceived} ${settleSent} ${netSettle}{/center}`)
+			this.box.setLine(7, '{center}Pseudo: '+this.colorValue(tsettleReceived)+this.colorValue(-tsettleSent,true)+'='+this.colorValue(tnetSettle)+this.colorDelta('tnetSettle',tnetSettle)+'{/center}')
+			this.box.setLine(8, '{center}Balance: '+this.colorValue(posTotal)+this.colorValue(negTotal,true)+'='+this.colorValue(balTotal)+this.colorDelta('balance',balTotal)+closeString+'{/center}')
+			//this.box.setLine(8, '{center}Consume: '+this.colorValue(cposTotal)+this.colorValue(cnegTotal,true)+'='+this.colorValue(cbalTotal)+this.colorDelta('cbalance',cbalTotal)+' '+this.colorValue(balTotal-cbalTotal)+'{/center}')
 		} catch (error)
 		{	showError('refresh:'+error)
 			this.box.setContent("")
@@ -1565,4 +1645,4 @@ async function pollBlockchain(URL)
 refreshScreens()
 refreshCashBox()
 maxGasPrice = 20000000000	// 20gwei	// 1500000000 = 1.5gwei  1000000000 = 1gwei
-//pollBlockchain("http://192.168.10.17:8546")	// Set your swap-endpoint here
+pollBlockchain("http://192.168.10.20:8545")	// Set your swap-endpoint here
